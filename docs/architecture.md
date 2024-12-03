@@ -196,12 +196,12 @@ raggen/
 - POST /api/chunks: Создание чанков из документов
 
 #### 3.2.2. Embedding Service
-- Генерация эмбеддингов с sentence-transformers
+- Генерация эмбеддингов с использованием модели all-MiniLM-L6-v2 (HuggingFace)
 - Чанкинг документов
 - Кэширование результатов
 
 #### 3.2.3. Vector Store
-- FAISS для хранения и поиска векторов
+- FAISS для хранения и поиска 384-мерных векторов (размерность all-MiniLM-L6-v2)
 - Интеграция с SQLite для метаданных
 - Оптимизация поиска
 
@@ -275,7 +275,7 @@ raggen/
 
 ### 8.2. raggen-embed
 ```python
-sentence-transformers>=2.2.0
+sentence-transformers==2.2.2  # Для модели all-MiniLM-L6-v2
 fastapi>=0.100.0
 faiss-cpu>=1.7.4
 pydantic>=2.0.0
