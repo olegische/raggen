@@ -1,0 +1,40 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Chat {
+  id        String    @id @default(uuid())
+  provider  String    // Тип провайдера (yandex/gigachat)
+  messages  Message[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([provider]) // Индекс для быстрого поиска по провайдеру
+}
+
+model Message {
+  id          Int      @id @default(autoincrement())
+  chatId      String
+  chat        Chat     @relation(fields: [chatId], references: [id])
+  message     String   // Сообщение пользователя
+  response    String?  // Ответ от модели
+  model       String   // Используемая модель
+  provider    String   // Провайдер, который сгенерировал ответ
+  timestamp   DateTime @default(now())
+  temperature Float    // Параметр температуры
+  maxTokens   Int      // Максимальное количество токенов
+
+  @@index([chatId])
+  @@index([timestamp])
+}

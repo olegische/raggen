@@ -1,101 +1,199 @@
-import Image from "next/image";
+'use client';
+
+import { useEffect, useState } from 'react';
+import { Message } from '@prisma/client';
+import { ProviderType } from '@/providers/factory';
+import { GENERATION_CONFIG } from '@/config/generation';
+import Header from '@/components/Header';
+import ChatWindow from '@/components/ChatWindow';
+import Footer from '@/components/Footer';
+
+interface GenerationSettings {
+  temperature: number;
+  maxTokens: number;
+}
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [provider, setProvider] = useState<ProviderType>('yandex');
+  const [model, setModel] = useState('');
+  const [inputValue, setInputValue] = useState('');
+  const [settings, setSettings] = useState<GenerationSettings>({
+    temperature: GENERATION_CONFIG.temperature.default,
+    maxTokens: GENERATION_CONFIG.maxTokens.default
+  });
+  const [isProvidersLoading, setIsProvidersLoading] = useState(true);
+  const [isModelsLoading, setIsModelsLoading] = useState(true);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+  useEffect(() => {
+    // Загружаем модель по умолчанию для выбранного провайдера
+    async function loadDefaultModel() {
+      try {
+        setIsModelsLoading(true);
+        const response = await fetch(`/api/models?provider=${provider}`);
+        if (!response.ok) throw new Error('Failed to load models');
+        const models = await response.json();
+        setModel(models[0] || '');
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Unknown error');
+      } finally {
+        setIsModelsLoading(false);
+      }
+    }
+
+    loadDefaultModel();
+  }, [provider]);
+
+  // Загрузка списка провайдеров
+  useEffect(() => {
+    async function loadProviders() {
+      try {
+        setIsProvidersLoading(true);
+        const response = await fetch('/api/providers');
+        if (!response.ok) throw new Error('Failed to load providers');
+        const data = await response.json();
+        // Если текущий провайдер недоступен, выбираем первый доступный
+        interface ProviderStatus {
+          id: ProviderType;
+          status: { available: boolean };
+        }
+        const availableProviders = data.filter((p: ProviderStatus) => p.status.available);
+        if (availableProviders.length > 0 && !availableProviders.some((p: ProviderStatus) => p.id === provider)) {
+          setProvider(availableProviders[0].id);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Unknown error');
+      } finally {
+        setIsProvidersLoading(false);
+      }
+    }
+
+    loadProviders();
+  }, [provider]);
+
+  const handleSendMessage = async (message: string) => {
+    if (!message.trim()) return;
+    
+    const tempId = Date.now();
+    
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Создаем временное сообщение пользователя
+      const tempMessage = {
+        id: tempId,
+        chatId: 'temp',
+        message: message.trim(),
+        response: null,
+        model: model,
+        provider: provider,
+        temperature: settings.temperature,
+        maxTokens: settings.maxTokens,
+        timestamp: new Date()
+      } as Message;
+      
+      // Добавляем сообщение пользователя немедленно
+      setMessages(prev => [...prev, tempMessage]);
+      setInputValue('');
+
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message,
+          provider,
+          options: {
+            model,
+            temperature: settings.temperature,
+            maxTokens: settings.maxTokens
+          }
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to send message');
+      }
+
+      const data = await response.json();
+      console.log('API Response:', data); // Debug log
+      
+      // Заменяем временное сообщение на полученное от сервера
+      setMessages(prev => prev.map(msg => 
+        msg.id === tempId ? {
+          ...data.message,
+          id: msg.id // Сохраняем временный ID для стабильности UI
+        } : msg
+      ));
+    } catch (err) {
+      console.error('Error sending message:', err); // Debug log
+      setError(err instanceof Error ? err.message : 'Failed to send message');
+      // Удаляем временное сообщение в случае ошибки
+      setMessages(prev => prev.filter(msg => msg.id !== tempId));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey && !loading) {
+      e.preventDefault();
+      handleSendMessage(inputValue);
+    }
+  };
+
+  const handleSettingsChange = (newSettings: GenerationSettings) => {
+    setSettings(newSettings);
+  };
+
+  const isInitializing = isProvidersLoading || isModelsLoading;
+
+  return (
+    <div className="flex flex-col h-screen">
+      <Header 
+        provider={provider}
+        onProviderChange={setProvider}
+        model={model}
+        onModelChange={setModel}
+        disabled={loading}
+        isProvidersLoading={isProvidersLoading}
+        isModelsLoading={isModelsLoading}
+      />
+      <ChatWindow 
+        messages={messages}
+        provider={provider}
+        loading={loading}
+        error={error}
+      />
+      <div className="border-t border-gray-200 dark:border-gray-800 p-4">
+        <div className="max-w-5xl mx-auto flex gap-2">
+          <input
+            type="text"
+            placeholder={isInitializing ? "Загрузка..." : "Введите сообщение..."}
+            className="flex-1 p-2 border rounded dark:bg-gray-800 dark:border-gray-700"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={loading || isInitializing}
+          />
+          <button
+            onClick={() => handleSendMessage(inputValue)}
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={loading || isInitializing}
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+            {isInitializing ? "Загрузка..." : "Отправить"}
+          </button>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      </div>
+      <Footer
+        provider={provider}
+        temperature={settings.temperature}
+        maxTokens={settings.maxTokens}
+        onSettingsChange={handleSettingsChange}
+        disabled={loading || isInitializing}
+      />
     </div>
   );
 }
