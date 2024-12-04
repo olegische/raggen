@@ -1,0 +1,83 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+.envrc
+.direnv/
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# SQLite database files
+*.sqlite
+*.sqlite3
+*.db
+
+# Prisma
+/prisma/*.db*
+/prisma/migrations/*
+!/prisma/migrations/
+.prisma/client/
+
+# Python
+venv/
+__pycache__/
+*.py[cod]
+*.so
+
+# Testing
+.coverage
+.coverage.*
+coverage.xml
+nosetests.xml
+htmlcov/
+.pytest_cache/
+.tox/
+.nox/
+.hypothesis/
+
+# dylib files
+*.dylib
+
+# Binary files and libraries
+*.dylib
+*.so
+*.dll
+*.exe
+*.bin
+*.dat
+*.npz
+.dylibs/
