@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "raggen-embed"
+version = "0.1.0"
+description = "RAG Generator Embedding Service"
+authors = ["Oleg Romanchuk"]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.109.2"
+uvicorn = "^0.27.1"
+python-dotenv = "^1.0.1"
+transformers = "^4.37.2"
+torch = "^2.2.0"
+sentence-transformers = "^2.3.1"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+black = "^24.1.1"
+isort = "^5.13.2"
+mypy = "^1.8.0"
+pytest-cov = "^4.1.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
