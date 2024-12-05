@@ -1,7 +1,5 @@
 import { PrismaClient, Message, Embedding, Context } from '@prisma/client';
 
-const prisma = new PrismaClient();
-
 export interface CreateMessageParams {
   chatId: string;
   message: string;
@@ -25,15 +23,21 @@ export interface CreateContextParams {
 }
 
 export class DatabaseService {
+  private prisma: PrismaClient;
+
+  constructor(prismaClient?: PrismaClient) {
+    this.prisma = prismaClient || new PrismaClient();
+  }
+
   // Сообщения
   async createMessage(params: CreateMessageParams): Promise<Message> {
-    return prisma.message.create({
+    return this.prisma.message.create({
       data: params
     });
   }
 
   async getMessage(id: number): Promise<Message | null> {
-    return prisma.message.findUnique({
+    return this.prisma.message.findUnique({
       where: { id },
       include: {
         embedding: true,
@@ -43,7 +47,7 @@ export class DatabaseService {
   }
 
   async getMessagesByChat(chatId: string): Promise<Message[]> {
-    return prisma.message.findMany({
+    return this.prisma.message.findMany({
       where: { chatId },
       include: {
         embedding: true,
@@ -55,19 +59,19 @@ export class DatabaseService {
 
   // Эмбеддинги
   async createEmbedding(params: CreateEmbeddingParams): Promise<Embedding> {
-    return prisma.embedding.create({
+    return this.prisma.embedding.create({
       data: params
     });
   }
 
   async getEmbeddingByMessageId(messageId: number): Promise<Embedding | null> {
-    return prisma.embedding.findUnique({
+    return this.prisma.embedding.findUnique({
       where: { messageId }
     });
   }
 
   async getEmbeddingsByVectorIds(vectorIds: number[]): Promise<Embedding[]> {
-    return prisma.embedding.findMany({
+    return this.prisma.embedding.findMany({
       where: {
         vectorId: {
           in: vectorIds
@@ -81,19 +85,19 @@ export class DatabaseService {
 
   // Контекст
   async createContext(params: CreateContextParams): Promise<Context> {
-    return prisma.context.create({
+    return this.prisma.context.create({
       data: params
     });
   }
 
   async createManyContexts(contexts: CreateContextParams[]): Promise<void> {
-    await prisma.context.createMany({
+    await this.prisma.context.createMany({
       data: contexts
     });
   }
 
   async getContextByMessageId(messageId: number): Promise<Context[]> {
-    return prisma.context.findMany({
+    return this.prisma.context.findMany({
       where: { messageId },
       include: {
         message: true
@@ -107,7 +111,7 @@ export class DatabaseService {
     messageParams: CreateMessageParams,
     embeddingParams: Omit<CreateEmbeddingParams, 'messageId'>
   ): Promise<Message> {
-    return prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
       // Создаем сообщение
       const message = await tx.message.create({
         data: messageParams
@@ -131,7 +135,7 @@ export class DatabaseService {
     embeddingParams: Omit<CreateEmbeddingParams, 'messageId'>,
     contextParams: Omit<CreateContextParams, 'messageId'>[]
   ): Promise<Message> {
-    return prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
       // Создаем сообщение
       const message = await tx.message.create({
         data: messageParams
