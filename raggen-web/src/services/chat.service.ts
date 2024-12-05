@@ -1,28 +1,48 @@
 import { ProviderFactory, ProviderType } from '@/providers/factory';
 import { GenerationOptions, ProviderMessage } from '@/providers/base.provider';
 import { GENERATION_CONFIG } from '@/config/generation';
-import prisma from '@/lib/db';
+import { DatabaseService } from './database';
+import { ContextService } from './context.service';
+import { PromptService } from './prompt.service';
+import { EmbedApiClient } from './embed-api';
+import { SystemPromptType } from '@/config/prompts';
+
+export interface SendMessageOptions extends GenerationOptions {
+  maxContextMessages?: number;
+  contextScoreThreshold?: number;
+}
 
 export class ChatService {
   private provider;
+  private database: DatabaseService;
+  private contextService: ContextService;
+  private promptService: PromptService;
 
-  constructor(providerType: ProviderType) {
+  constructor(
+    providerType: ProviderType,
+    database?: DatabaseService,
+    embedApi?: EmbedApiClient
+  ) {
     this.provider = ProviderFactory.createProvider(providerType);
+    this.database = database || new DatabaseService();
+    this.contextService = new ContextService(
+      this.database,
+      embedApi || new EmbedApiClient()
+    );
+    this.promptService = new PromptService();
   }
 
   async sendMessage(
     message: string,
     chatId?: string,
-    options?: GenerationOptions
+    options?: SendMessageOptions
   ) {
     try {
       // Получаем или создаем чат
       const chat = chatId 
-        ? await prisma.chat.findUnique({ where: { id: chatId } })
-        : await prisma.chat.create({ 
-            data: { 
-              provider: this.provider.constructor.name.replace('Provider', '').toLowerCase()
-            } 
+        ? await this.database.getChat(chatId)
+        : await this.database.createChat({
+            provider: this.provider.constructor.name.replace('Provider', '').toLowerCase()
           });
 
       if (!chat) {
@@ -30,28 +50,41 @@ export class ChatService {
       }
 
       // Получаем предыдущие сообщения для контекста
-      const previousMessages = await prisma.message.findMany({
-        where: { chatId: chat.id },
-        orderBy: { timestamp: 'asc' },
-        take: 10
+      const previousMessages = await this.database.getMessagesByChat(chat.id);
+
+      // Ищем релевантный контекст
+      const context = await this.contextService.searchContext(message, {
+        maxResults: options?.maxContextMessages,
+        minScore: options?.contextScoreThreshold,
+        excludeMessageIds: previousMessages.map(msg => msg.id)
       });
 
-      // Форматируем сообщения для провайдера
-      const context = previousMessages.map(msg => ({
-        role: msg.response ? 'assistant' : 'user',
-        content: msg.response || msg.message
-      })) as ProviderMessage[];
+      // Форматируем промпт с контекстом
+      const promptMessages = this.promptService.formatPromptWithContext(
+        message,
+        context,
+        this.provider.constructor.name.replace('Provider', '').toLowerCase() as SystemPromptType,
+        {
+          maxContextMessages: options?.maxContextMessages,
+          contextScoreThreshold: options?.contextScoreThreshold
+        }
+      );
+
+      // Добавляем историю сообщений
+      const historyMessages = this.promptService.formatMessageHistory(previousMessages);
+      promptMessages.splice(1, 0, ...historyMessages);
 
       // Получаем ответ от провайдера
       const response = await this.provider.generateResponse(
         message,
         options,
-        context
+        promptMessages
       );
 
-      // Сохраняем сообщение в БД
-      const savedMessage = await prisma.message.create({
-        data: {
+      // Создаем сообщение с эмбеддингом
+      const embedResponse = await this.contextService.embedApi.embedText(message);
+      const savedMessage = await this.database.createMessageWithEmbedding(
+        {
           chatId: chat.id,
           message: message,
           response: response.text,
@@ -59,13 +92,21 @@ export class ChatService {
           provider: this.provider.constructor.name.replace('Provider', '').toLowerCase(),
           temperature: options?.temperature || GENERATION_CONFIG.temperature.default,
           maxTokens: options?.maxTokens || GENERATION_CONFIG.maxTokens.default
+        },
+        {
+          vector: Buffer.from(new Float32Array(embedResponse.embedding).buffer),
+          vectorId: embedResponse.vector_id
         }
-      });
+      );
+
+      // Сохраняем использованный контекст
+      await this.contextService.saveUsedContext(savedMessage.id, context);
 
       return {
         message: savedMessage,
         chatId: chat.id,
-        usage: response.usage
+        usage: response.usage,
+        context: context.filter(ctx => ctx.usedInPrompt)
       };
 
     } catch (error) {
@@ -75,9 +116,6 @@ export class ChatService {
   }
 
   async getHistory(chatId: string) {
-    return prisma.message.findMany({
-      where: { chatId },
-      orderBy: { timestamp: 'asc' }
-    });
+    return this.database.getMessagesByChat(chatId);
   }
 } 
