@@ -65,15 +65,23 @@ def get_vector_store() -> FAISSVectorStore:
 async def embed_text(
     request: TextRequest,
     embedding_service: EmbeddingService = Depends(get_embedding_service),
+    vector_store: FAISSVectorStore = Depends(get_vector_store),
 ) -> EmbeddingResponse:
-    """Generate embedding for a single text."""
+    """Generate embedding for a single text and store it in the vector store."""
     try:
         # Generate embedding
         embedding = embedding_service.get_embedding(request.text)
         
+        # Store embedding in vector store
+        vector_id = vector_store.add_vectors(np.expand_dims(embedding, 0))[0]
+        
+        # Train the index after adding new vectors
+        vector_store.train()
+        
         return EmbeddingResponse(
             embedding=embedding.tolist(),
             text=request.text,
+            vector_id=vector_id
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -92,6 +100,7 @@ async def embed_text(
     summary="Generate embeddings for multiple texts",
     description="""
     Generate embedding vectors for multiple texts in a single request.
+    The embeddings are stored in the vector store for future similarity search.
     
     Requirements:
     - Each text must not be empty and must be less than 512 characters
@@ -101,7 +110,7 @@ async def embed_text(
     The response includes for each text:
     - The embedding vector (384 dimensions)
     - The original text
-    - The vector ID (if stored)
+    - The vector ID in the store
     
     Possible errors:
     - 400: Empty text list, text too long, or too many texts
@@ -111,14 +120,21 @@ async def embed_text(
 async def embed_texts(
     request: BatchTextRequest,
     embedding_service: EmbeddingService = Depends(get_embedding_service),
+    vector_store: FAISSVectorStore = Depends(get_vector_store),
 ) -> BatchEmbeddingResponse:
-    """Generate embeddings for multiple texts."""
+    """Generate embeddings for multiple texts and store them in the vector store."""
     try:
         # Generate embeddings
         embeddings = embedding_service.get_embeddings(request.texts)
         
-        # Using zip for parallel iteration over embeddings and texts.
-        # This ensures each embedding is correctly matched with its corresponding text,
+        # Store embeddings in vector store
+        vector_ids = vector_store.add_vectors(embeddings)
+        
+        # Train the index after adding new vectors
+        vector_store.train()
+        
+        # Using zip for parallel iteration over embeddings, texts and vector IDs.
+        # This ensures each embedding is correctly matched with its corresponding text and ID,
         # even if their counts don't match (which shouldn't happen, but we ensure safety).
         # zip is also more efficient than using indices as it doesn't require additional computations.
         return BatchEmbeddingResponse(
@@ -126,8 +142,9 @@ async def embed_texts(
                 EmbeddingResponse(
                     embedding=embedding.tolist(),
                     text=text,
+                    vector_id=vector_id
                 )
-                for embedding, text in zip(embeddings, request.texts)
+                for embedding, text, vector_id in zip(embeddings, request.texts, vector_ids)
             ]
         )
     except ValueError as e:
