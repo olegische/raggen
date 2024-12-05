@@ -48,85 +48,131 @@ def reset_global_services():
     _embedding_service = None
     _vector_store = None
 
-def test_embed_text(client):
+def test_embed_text(client, monkeypatch):
     """Test single text embedding endpoint."""
-    # Test successful embedding
-    response = client.post(
-        "/api/v1/embed",
-        json={"text": "This is a test text"}
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert "embedding" in data
-    assert "text" in data
-    assert len(data["embedding"]) == 384  # Model dimension
+    # Mock vector store to track calls
+    store_calls = {"add": 0, "train": 0}
     
-    # Test empty text
-    response = client.post(
-        "/api/v1/embed",
-        json={"text": ""}
-    )
-    assert response.status_code == 422  # Pydantic validation
-    data = response.json()
-    assert "Text cannot be empty" in str(data)
+    class MockVectorStore:
+        def add_vectors(self, vectors):
+            store_calls["add"] += 1
+            return [1]  # Return mock vector ID
+            
+        def train(self):
+            store_calls["train"] += 1
     
-    # Test too long text
-    response = client.post(
-        "/api/v1/embed",
-        json={"text": "a" * 1000}
-    )
-    assert response.status_code == 422  # Pydantic validation
-    data = response.json()
-    assert "Text cannot be longer than 512 characters" in str(data)
+    # Override FastAPI dependency
+    app.dependency_overrides[get_vector_store] = lambda: MockVectorStore()
     
-    # Test invalid JSON
-    response = client.post(
-        "/api/v1/embed",
-        data="invalid json"
-    )
-    assert response.status_code == 422
+    try:
+        # Test successful embedding
+        response = client.post(
+            "/api/v1/embed",
+            json={"text": "This is a test text"}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "embedding" in data
+        assert "text" in data
+        assert "vector_id" in data
+        assert data["vector_id"] == 1  # Check vector ID is present
+        assert len(data["embedding"]) == 384  # Model dimension
+        
+        # Verify vector store calls
+        assert store_calls["add"] == 1
+        assert store_calls["train"] == 1
+        
+        # Test empty text
+        response = client.post(
+            "/api/v1/embed",
+            json={"text": ""}
+        )
+        assert response.status_code == 422  # Pydantic validation
+        data = response.json()
+        assert "Text cannot be empty" in str(data)
+        
+        # Test too long text
+        response = client.post(
+            "/api/v1/embed",
+            json={"text": "a" * 1000}
+        )
+        assert response.status_code == 422  # Pydantic validation
+        data = response.json()
+        assert "Text cannot be longer than 512 characters" in str(data)
+        
+        # Test invalid JSON
+        response = client.post(
+            "/api/v1/embed",
+            data="invalid json"
+        )
+        assert response.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
 
-def test_embed_texts(client):
+def test_embed_texts(client, monkeypatch):
     """Test batch text embedding endpoint."""
-    # Test successful batch embedding
-    texts = ["First text", "Second text", "Third text"]
-    response = client.post(
-        "/api/v1/embed/batch",
-        json={"texts": texts}
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert "embeddings" in data
-    assert len(data["embeddings"]) == len(texts)
-    for emb in data["embeddings"]:
-        assert len(emb["embedding"]) == 384
+    # Mock vector store to track calls
+    store_calls = {"add": 0, "train": 0}
     
-    # Test empty batch
-    response = client.post(
-        "/api/v1/embed/batch",
-        json={"texts": []}
-    )
-    assert response.status_code == 422  # Pydantic validation
-    data = response.json()
-    assert "Texts list cannot be empty" in str(data)
+    class MockVectorStore:
+        def add_vectors(self, vectors):
+            store_calls["add"] += 1
+            return list(range(len(vectors)))  # Return mock vector IDs
+            
+        def train(self):
+            store_calls["train"] += 1
     
-    # Test batch with empty text
-    response = client.post(
-        "/api/v1/embed/batch",
-        json={"texts": ["valid text", ""]}
-    )
-    assert response.status_code == 422  # Pydantic validation
-    data = response.json()
-    assert "Text at position 1 cannot be empty" in str(data)
+    # Override FastAPI dependency
+    app.dependency_overrides[get_vector_store] = lambda: MockVectorStore()
     
-    # Test too large batch
-    response = client.post(
-        "/api/v1/embed/batch",
-        json={"texts": ["text"] * 50}  # Max is 32
-    )
-    assert response.status_code == 422  # Pydantic validation
-    data = response.json()
-    assert "list should have at most 32 items" in str(data).lower()
+    try:
+        # Test successful batch embedding
+        texts = ["First text", "Second text", "Third text"]
+        response = client.post(
+            "/api/v1/embed/batch",
+            json={"texts": texts}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "embeddings" in data
+        assert len(data["embeddings"]) == len(texts)
+        for i, emb in enumerate(data["embeddings"]):
+            assert len(emb["embedding"]) == 384
+            assert "vector_id" in emb
+            assert emb["vector_id"] == i  # Check vector IDs match
+        
+        # Verify vector store calls
+        assert store_calls["add"] == 1
+        assert store_calls["train"] == 1
+        
+        # Test empty batch
+        response = client.post(
+            "/api/v1/embed/batch",
+            json={"texts": []}
+        )
+        assert response.status_code == 422  # Pydantic validation
+        data = response.json()
+        assert "Texts list cannot be empty" in str(data)
+        
+        # Test batch with empty text
+        response = client.post(
+            "/api/v1/embed/batch",
+            json={"texts": ["valid text", ""]}
+        )
+        assert response.status_code == 422  # Pydantic validation
+        data = response.json()
+        assert "Text at position 1 cannot be empty" in str(data)
+        
+        # Test too large batch
+        response = client.post(
+            "/api/v1/embed/batch",
+            json={"texts": ["text"] * 50}  # Max is 32
+        )
+        assert response.status_code == 422  # Pydantic validation
+        data = response.json()
+        assert "list should have at most 32 items" in str(data).lower()
+    finally:
+        app.dependency_overrides.clear()
 
 def test_search_similar(client, monkeypatch):
     """Test similarity search endpoint."""
