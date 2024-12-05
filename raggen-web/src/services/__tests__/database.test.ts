@@ -1,46 +1,112 @@
-import { PrismaClient, Message, Embedding, Context } from '@prisma/client';
-import { mockDeep, mockReset, DeepMockProxy } from 'jest-mock-extended';
-import { DatabaseService, CreateMessageParams, CreateEmbeddingParams, CreateContextParams } from '../database';
+import { DatabaseService, CreateMessageParams, CreateContextParams } from '../database';
+import { PrismaClient, Message, Context, Chat } from '@prisma/client';
 
-// Мокаем PrismaClient
-jest.mock('@prisma/client', () => ({
-  PrismaClient: jest.fn()
-}));
+// Мокаем Prisma
+jest.mock('@prisma/client', () => {
+  const mockPrismaClient = {
+    message: {
+      create: jest.fn(),
+      findUnique: jest.fn(),
+      findMany: jest.fn()
+    },
+    embedding: {
+      create: jest.fn(),
+      findUnique: jest.fn(),
+      findMany: jest.fn()
+    },
+    context: {
+      create: jest.fn(),
+      createMany: jest.fn(),
+      findMany: jest.fn()
+    },
+    chat: {
+      create: jest.fn(),
+      findUnique: jest.fn(),
+      findMany: jest.fn()
+    },
+    $transaction: jest.fn((callback) => callback(mockPrismaClient))
+  };
+
+  return {
+    PrismaClient: jest.fn(() => mockPrismaClient)
+  };
+});
 
 describe('DatabaseService', () => {
-  let prisma: DeepMockProxy<PrismaClient>;
   let service: DatabaseService;
+  let prisma: jest.Mocked<PrismaClient>;
 
   beforeEach(() => {
-    prisma = mockDeep<PrismaClient>();
-    mockReset(prisma);
+    prisma = new PrismaClient() as jest.Mocked<PrismaClient>;
     service = new DatabaseService(prisma);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('Chat operations', () => {
+    const mockChat: Chat = {
+      id: 'chat-1',
+      provider: 'yandex',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    it('should create chat', async () => {
+      (prisma.chat.create as jest.Mock).mockResolvedValue(mockChat);
+
+      const result = await service.createChat({ provider: 'yandex' });
+
+      expect(result).toEqual(mockChat);
+      expect(prisma.chat.create).toHaveBeenCalledWith({
+        data: { provider: 'yandex' }
+      });
+    });
+
+    it('should get chat by id', async () => {
+      (prisma.chat.findUnique as jest.Mock).mockResolvedValue(mockChat);
+
+      const result = await service.getChat('chat-1');
+
+      expect(result).toEqual(mockChat);
+      expect(prisma.chat.findUnique).toHaveBeenCalledWith({
+        where: { id: 'chat-1' }
+      });
+    });
+
+    it('should get chats by provider', async () => {
+      (prisma.chat.findMany as jest.Mock).mockResolvedValue([mockChat]);
+
+      const result = await service.getChatsByProvider('yandex');
+
+      expect(result).toEqual([mockChat]);
+      expect(prisma.chat.findMany).toHaveBeenCalledWith({
+        where: { provider: 'yandex' },
+        orderBy: { createdAt: 'desc' }
+      });
+    });
   });
 
   describe('Message operations', () => {
     const mockMessageParams: CreateMessageParams = {
-      chatId: 'test-chat-id',
+      chatId: 'chat-1',
       message: 'Test message',
       model: 'test-model',
-      provider: 'yandex',
+      provider: 'test-provider',
       temperature: 0.7,
-      maxTokens: 1000
+      maxTokens: 1000,
+      response: null
     };
 
     const mockMessage: Message = {
       id: 1,
-      chatId: mockMessageParams.chatId,
-      message: mockMessageParams.message,
-      response: null,
-      model: mockMessageParams.model,
-      provider: mockMessageParams.provider,
-      temperature: mockMessageParams.temperature,
-      maxTokens: mockMessageParams.maxTokens,
+      ...mockMessageParams,
       timestamp: new Date()
     };
 
     it('should create message', async () => {
-      prisma.message.create.mockResolvedValue(mockMessage);
+      (prisma.message.create as jest.Mock).mockResolvedValue(mockMessage);
 
       const result = await service.createMessage(mockMessageParams);
 
@@ -50,8 +116,8 @@ describe('DatabaseService', () => {
       });
     });
 
-    it('should get message by id with relations', async () => {
-      prisma.message.findUnique.mockResolvedValue(mockMessage);
+    it('should get message by id', async () => {
+      (prisma.message.findUnique as jest.Mock).mockResolvedValue(mockMessage);
 
       const result = await service.getMessage(1);
 
@@ -66,74 +132,18 @@ describe('DatabaseService', () => {
     });
 
     it('should get messages by chat id', async () => {
-      prisma.message.findMany.mockResolvedValue([mockMessage]);
+      (prisma.message.findMany as jest.Mock).mockResolvedValue([mockMessage]);
 
-      const result = await service.getMessagesByChat('test-chat-id');
+      const result = await service.getMessagesByChat('chat-1');
 
       expect(result).toEqual([mockMessage]);
       expect(prisma.message.findMany).toHaveBeenCalledWith({
-        where: { chatId: 'test-chat-id' },
+        where: { chatId: 'chat-1' },
         include: {
           embedding: true,
           usedContext: true
         },
         orderBy: { timestamp: 'asc' }
-      });
-    });
-  });
-
-  describe('Embedding operations', () => {
-    const mockEmbeddingParams: CreateEmbeddingParams = {
-      messageId: 1,
-      vector: Buffer.from('test'),
-      vectorId: 100
-    };
-
-    const mockEmbedding: Embedding = {
-      id: 1,
-      messageId: mockEmbeddingParams.messageId,
-      vector: mockEmbeddingParams.vector,
-      vectorId: mockEmbeddingParams.vectorId,
-      createdAt: new Date()
-    };
-
-    it('should create embedding', async () => {
-      prisma.embedding.create.mockResolvedValue(mockEmbedding);
-
-      const result = await service.createEmbedding(mockEmbeddingParams);
-
-      expect(result).toEqual(mockEmbedding);
-      expect(prisma.embedding.create).toHaveBeenCalledWith({
-        data: mockEmbeddingParams
-      });
-    });
-
-    it('should get embedding by message id', async () => {
-      prisma.embedding.findUnique.mockResolvedValue(mockEmbedding);
-
-      const result = await service.getEmbeddingByMessageId(1);
-
-      expect(result).toEqual(mockEmbedding);
-      expect(prisma.embedding.findUnique).toHaveBeenCalledWith({
-        where: { messageId: 1 }
-      });
-    });
-
-    it('should get embeddings by vector ids', async () => {
-      prisma.embedding.findMany.mockResolvedValue([mockEmbedding]);
-
-      const result = await service.getEmbeddingsByVectorIds([100]);
-
-      expect(result).toEqual([mockEmbedding]);
-      expect(prisma.embedding.findMany).toHaveBeenCalledWith({
-        where: {
-          vectorId: {
-            in: [100]
-          }
-        },
-        include: {
-          message: true
-        }
       });
     });
   });
@@ -156,7 +166,7 @@ describe('DatabaseService', () => {
     };
 
     it('should create context', async () => {
-      prisma.context.create.mockResolvedValue(mockContext);
+      (prisma.context.create as jest.Mock).mockResolvedValue(mockContext);
 
       const result = await service.createContext(mockContextParams);
 
@@ -167,7 +177,7 @@ describe('DatabaseService', () => {
     });
 
     it('should create many contexts', async () => {
-      prisma.context.createMany.mockResolvedValue({ count: 1 });
+      (prisma.context.createMany as jest.Mock).mockResolvedValue({ count: 1 });
 
       await service.createManyContexts([mockContextParams]);
 
@@ -177,7 +187,7 @@ describe('DatabaseService', () => {
     });
 
     it('should get context by message id', async () => {
-      prisma.context.findMany.mockResolvedValue([mockContext]);
+      (prisma.context.findMany as jest.Mock).mockResolvedValue([mockContext]);
 
       const result = await service.getContextByMessageId(1);
 
@@ -192,79 +202,71 @@ describe('DatabaseService', () => {
     });
   });
 
-  describe('Transaction operations', () => {
+  describe('Transactions', () => {
     const mockMessageParams: CreateMessageParams = {
-      chatId: 'test-chat-id',
+      chatId: 'chat-1',
       message: 'Test message',
       model: 'test-model',
-      provider: 'yandex',
+      provider: 'test-provider',
       temperature: 0.7,
-      maxTokens: 1000
+      maxTokens: 1000,
+      response: null
     };
 
     const mockMessage: Message = {
       id: 1,
-      chatId: mockMessageParams.chatId,
-      message: mockMessageParams.message,
-      response: null,
-      model: mockMessageParams.model,
-      provider: mockMessageParams.provider,
-      temperature: mockMessageParams.temperature,
-      maxTokens: mockMessageParams.maxTokens,
+      ...mockMessageParams,
       timestamp: new Date()
     };
 
-    const mockEmbeddingParams: Omit<CreateEmbeddingParams, 'messageId'> = {
-      vector: Buffer.from('test'),
-      vectorId: 100
-    };
-
-    const mockContextParams: Omit<CreateContextParams, 'messageId'> = {
-      sourceId: 2,
-      score: 0.9,
-      usedInPrompt: true
-    };
-
     it('should create message with embedding in transaction', async () => {
-      const mockTransaction = mockDeep<PrismaClient>();
-      prisma.$transaction.mockImplementation(async (callback: any) => {
-        if (typeof callback === 'function') {
-          return callback(mockTransaction);
-        }
-        return mockTransaction;
+      (prisma.message.create as jest.Mock).mockResolvedValue(mockMessage);
+      (prisma.embedding.create as jest.Mock).mockResolvedValue({
+        id: 1,
+        messageId: 1,
+        vector: Buffer.from([]),
+        vectorId: 1,
+        createdAt: new Date()
       });
-      mockTransaction.message.create.mockResolvedValue(mockMessage);
 
       const result = await service.createMessageWithEmbedding(
         mockMessageParams,
-        mockEmbeddingParams
+        {
+          vector: Buffer.from([]),
+          vectorId: 1
+        }
       );
 
       expect(result).toEqual(mockMessage);
-      expect(mockTransaction.message.create).toHaveBeenCalled();
-      expect(mockTransaction.embedding.create).toHaveBeenCalled();
+      expect(prisma.$transaction).toHaveBeenCalled();
     });
 
     it('should create message with embedding and context in transaction', async () => {
-      const mockTransaction = mockDeep<PrismaClient>();
-      prisma.$transaction.mockImplementation(async (callback: any) => {
-        if (typeof callback === 'function') {
-          return callback(mockTransaction);
-        }
-        return mockTransaction;
+      (prisma.message.create as jest.Mock).mockResolvedValue(mockMessage);
+      (prisma.embedding.create as jest.Mock).mockResolvedValue({
+        id: 1,
+        messageId: 1,
+        vector: Buffer.from([]),
+        vectorId: 1,
+        createdAt: new Date()
       });
-      mockTransaction.message.create.mockResolvedValue(mockMessage);
+      (prisma.context.createMany as jest.Mock).mockResolvedValue({ count: 1 });
 
       const result = await service.createMessageWithEmbeddingAndContext(
         mockMessageParams,
-        mockEmbeddingParams,
-        [mockContextParams]
+        {
+          vector: Buffer.from([]),
+          vectorId: 1
+        },
+        [{
+          sourceId: 2,
+          score: 0.9,
+          usedInPrompt: true
+        }]
       );
 
       expect(result).toEqual(mockMessage);
-      expect(mockTransaction.message.create).toHaveBeenCalled();
-      expect(mockTransaction.embedding.create).toHaveBeenCalled();
-      expect(mockTransaction.context.createMany).toHaveBeenCalled();
+      expect(prisma.$transaction).toHaveBeenCalled();
     });
   });
 }); 

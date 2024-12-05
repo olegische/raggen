@@ -1,4 +1,4 @@
-import { PrismaClient, Message, Embedding, Context } from '@prisma/client';
+import { PrismaClient, Message, Embedding, Context, Chat } from '@prisma/client';
 
 export interface CreateMessageParams {
   chatId: string;
@@ -7,6 +7,7 @@ export interface CreateMessageParams {
   provider: string;
   temperature: number;
   maxTokens: number;
+  response?: string | null;
 }
 
 export interface CreateEmbeddingParams {
@@ -22,11 +23,35 @@ export interface CreateContextParams {
   usedInPrompt: boolean;
 }
 
+export interface CreateChatParams {
+  provider: string;
+}
+
 export class DatabaseService {
   private prisma: PrismaClient;
 
   constructor(prismaClient?: PrismaClient) {
     this.prisma = prismaClient || new PrismaClient();
+  }
+
+  // Чаты
+  async createChat(params: CreateChatParams): Promise<Chat> {
+    return this.prisma.chat.create({
+      data: params
+    });
+  }
+
+  async getChat(id: string): Promise<Chat | null> {
+    return this.prisma.chat.findUnique({
+      where: { id }
+    });
+  }
+
+  async getChatsByProvider(provider: string): Promise<Chat[]> {
+    return this.prisma.chat.findMany({
+      where: { provider },
+      orderBy: { createdAt: 'desc' }
+    });
   }
 
   // Сообщения
@@ -163,6 +188,19 @@ export class DatabaseService {
       }
 
       return message;
+    });
+  }
+
+  /**
+   * Получение сообщений по их идентификаторам
+   */
+  async getMessagesByIds(ids: number[]): Promise<Message[]> {
+    return this.prisma.message.findMany({
+      where: {
+        id: {
+          in: ids
+        }
+      }
     });
   }
 } 
