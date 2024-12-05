@@ -61,6 +61,7 @@ __pycache__/
 # Testing
 .coverage
 .coverage.*
+.coverage.*.local.*
 coverage.xml
 nosetests.xml
 htmlcov/
