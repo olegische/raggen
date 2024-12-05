@@ -117,6 +117,10 @@ async def embed_texts(
         # Generate embeddings
         embeddings = embedding_service.get_embeddings(request.texts)
         
+        # Using zip for parallel iteration over embeddings and texts.
+        # This ensures each embedding is correctly matched with its corresponding text,
+        # even if their counts don't match (which shouldn't happen, but we ensure safety).
+        # zip is also more efficient than using indices as it doesn't require additional computations.
         return BatchEmbeddingResponse(
             embeddings=[
                 EmbeddingResponse(
