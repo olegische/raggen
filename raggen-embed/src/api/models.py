@@ -109,11 +109,20 @@ class EmbeddingResponse(BaseModel):
         description="Original text that was embedded",
         example="This is a sample text"
     )
-    vector_id: Optional[int] = Field(
-        None,
-        description="ID of the vector in the store (if stored)",
+    vector_id: int = Field(
+        ...,
+        description="ID of the vector in the store",
         example=1
     )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "embedding": [0.1, 0.2, 0.3, 0.4, 0.5],
+                "text": "This is a sample text",
+                "vector_id": 1
+            }
+        }
 
 class BatchEmbeddingResponse(BaseModel):
     """Response model for batch text embedding."""
