@@ -1,9 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -34,7 +31,34 @@ model Message {
   timestamp   DateTime @default(now())
   temperature Float    // Параметр температуры
   maxTokens   Int      // Максимальное количество токенов
+  embedding   Embedding? // Эмбеддинг сообщения
+  usedContext Context[] // Контекст, использованный для этого сообщения
 
   @@index([chatId])
   @@index([timestamp])
+}
+
+model Embedding {
+  id          Int      @id @default(autoincrement())
+  messageId   Int      @unique // Связь один-к-одному с сообщением
+  message     Message  @relation(fields: [messageId], references: [id])
+  vector      Bytes    // Эмбеддинг в бинарном формате (384 * 4 байта)
+  vectorId    Int      // ID вектора в FAISS
+  createdAt   DateTime @default(now())
+
+  @@index([vectorId]) // Индекс для быстрого поиска по ID вектора
+}
+
+model Context {
+  id          Int      @id @default(autoincrement())
+  messageId   Int      // Сообщение, в котором использован контекст
+  message     Message  @relation(fields: [messageId], references: [id])
+  sourceId    Int      // ID исходного сообщения, использованного как контекст
+  score       Float    // Оценка релевантности (0-1)
+  usedInPrompt Boolean // Был ли контекст использован в промпте
+  createdAt   DateTime @default(now())
+
+  @@index([messageId])
+  @@index([sourceId])
+  @@index([score])
 }
