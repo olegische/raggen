@@ -82,9 +82,11 @@ export class EmbedApiClient {
    */
   async embedText(text: string): Promise<EmbeddingResponse> {
     try {
+      console.log('Generating embedding for text:', text);
       const response = await this.retryRequest(() => 
         this.client.post<EmbeddingResponse>('/api/v1/embed', { text })
       );
+      console.log('Embedding response:', JSON.stringify(response.data, null, 2));
       return response.data;
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.data) {
@@ -100,9 +102,11 @@ export class EmbedApiClient {
    */
   async embedTexts(texts: string[]): Promise<BatchEmbeddingResponse> {
     try {
+      console.log('Generating embeddings for texts:', texts);
       const response = await this.retryRequest(() => 
         this.client.post<BatchEmbeddingResponse>('/api/v1/embed/batch', { texts })
       );
+      console.log('Batch embedding response:', JSON.stringify(response.data, null, 2));
       return response.data;
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.data) {
@@ -118,9 +122,11 @@ export class EmbedApiClient {
    */
   async searchSimilar(text: string, k: number = 5): Promise<SearchResponse> {
     try {
+      console.log('Searching similar texts for:', text, 'with k:', k);
       const response = await this.retryRequest(() => 
         this.client.post<SearchResponse>('/api/v1/search', { text, k })
       );
+      console.log('Search response:', JSON.stringify(response.data, null, 2));
       return response.data;
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.data) {
