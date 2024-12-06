@@ -41,14 +41,26 @@ export class GigaChatProvider extends BaseProvider {
     try {
       console.log('Generating response with options:', validatedOptions);
       
-      const messages = this.formatMessages(message, previousMessages);
+      const messages = previousMessages ? 
+        [
+          ...previousMessages.filter((msg, index, arr) => 
+            msg.role === 'user' || 
+            (msg.role === 'system' && index === arr.findIndex(m => m.role === 'system'))
+          ),
+          { role: 'user', content: message }
+        ] :
+        [{ role: 'user', content: message }];
+
       console.log('Formatted messages:', messages);
 
       const response = await axios.post(
         `${this.config.apiUrl}/chat/completions`,
         {
           model: 'GigaChat',
-          messages: messages,
+          messages: messages.map(msg => ({
+            role: msg.role,
+            content: msg.content
+          })),
           temperature: validatedOptions.temperature,
           max_tokens: validatedOptions.maxTokens
         },
