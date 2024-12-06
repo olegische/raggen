@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Message } from '@prisma/client';
 import { ProviderType } from '@/providers/factory';
 import { getProviderDisplayName, PROVIDER_CONFIG } from '@/config/providers';
 import { ContextSearchResult } from '@/services/context.service';
 import ContextIndicator from './ContextIndicator';
+import ContextSettings from './ContextSettings';
 
 interface ChatWindowProps {
   messages: Message[];
@@ -13,6 +14,16 @@ interface ChatWindowProps {
   loading?: boolean;
   error?: string | null;
   messageContexts?: Record<number, ContextSearchResult[]>;
+  onContextSettingsChange?: (settings: {
+    maxContextMessages: number;
+    contextScoreThreshold: number;
+    contextEnabled: boolean;
+  }) => void;
+  contextSettings?: {
+    maxContextMessages: number;
+    contextScoreThreshold: number;
+    contextEnabled: boolean;
+  };
 }
 
 // Компонент кнопки копирования
@@ -189,9 +200,16 @@ export default function ChatWindow({
   provider,
   loading = false,
   error = null,
-  messageContexts
+  messageContexts,
+  onContextSettingsChange,
+  contextSettings = {
+    maxContextMessages: 5,
+    contextScoreThreshold: 0.7,
+    contextEnabled: true
+  }
 }: ChatWindowProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && bottomRef.current?.scrollIntoView) {
@@ -200,20 +218,79 @@ export default function ChatWindow({
   }, [messages]);
 
   return (
-    <div className="flex-1 p-4 overflow-y-auto bg-gray-50 dark:bg-gray-900">
-      {error ? (
-        <ErrorState error={error} />
-      ) : messages.length === 0 ? (
-        <EmptyState />
-      ) : (
-        <MessageList 
-          messages={messages} 
-          currentProvider={provider} 
-          contexts={messageContexts}
-        />
+    <div className="flex flex-col h-full">
+      {/* Кнопка настроек */}
+      <div className="flex justify-end p-2">
+        <button
+          onClick={() => setShowSettings(!showSettings)}
+          className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+          aria-label={showSettings ? 'Скрыть настройки контекста' : 'Показать настройки контекста'}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </button>
+      </div>
+
+      {/* Панель настроек */}
+      {showSettings && onContextSettingsChange && (
+        <div className="mb-4 mx-4">
+          <ContextSettings
+            maxContextMessages={contextSettings.maxContextMessages}
+            contextScoreThreshold={contextSettings.contextScoreThreshold}
+            contextEnabled={contextSettings.contextEnabled}
+            onSettingsChange={onContextSettingsChange}
+          />
+        </div>
       )}
-      {loading && <LoadingIndicator provider={provider} />}
-      <div ref={bottomRef} />
+
+      {/* Существующий код чата */}
+      <div className="flex-1 overflow-y-auto p-4">
+        {messages.length === 0 ? (
+          <div className="text-center text-gray-500 dark:text-gray-400">
+            Начните диалог, отправив сообщение
+          </div>
+        ) : (
+          messages.map((message) => (
+            <div key={message.id} className="mb-4">
+              <UserMessage message={message.message} />
+              {message.response && (
+                <ProviderResponse 
+                  response={message.response} 
+                  model={message.model} 
+                  provider={message.provider}
+                  currentProvider={provider}
+                  context={messageContexts?.[message.id]}
+                />
+              )}
+              {messageContexts?.[message.id] && (
+                <ContextIndicator context={messageContexts[message.id]} />
+              )}
+            </div>
+          ))
+        )}
+        {loading && (
+          <div className="text-gray-500 dark:text-gray-400">
+            {getProviderDisplayName(provider)} печатает...
+          </div>
+        )}
+        {error && (
+          <div className="text-red-500 dark:text-red-400">
+            {error}
+          </div>
+        )}
+      </div>
     </div>
   );
 } 
