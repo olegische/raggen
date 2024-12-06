@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "raggen-embed"
-version = "0.1.0"
+version = "1.0.0"
 description = "RAG Generator Embedding Service"
 authors = ["Oleg Romanchuk"]
 
