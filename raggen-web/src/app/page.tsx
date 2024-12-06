@@ -24,6 +24,11 @@ export default function Home() {
     temperature: GENERATION_CONFIG.temperature.default,
     maxTokens: GENERATION_CONFIG.maxTokens.default
   });
+  const [contextSettings, setContextSettings] = useState({
+    maxContextMessages: 5,
+    contextScoreThreshold: 0.7,
+    contextEnabled: true
+  });
   const [isProvidersLoading, setIsProvidersLoading] = useState(true);
   const [isModelsLoading, setIsModelsLoading] = useState(true);
 
@@ -108,7 +113,9 @@ export default function Home() {
           options: {
             model,
             temperature: settings.temperature,
-            maxTokens: settings.maxTokens
+            maxTokens: settings.maxTokens,
+            maxContextMessages: contextSettings.contextEnabled ? contextSettings.maxContextMessages : 0,
+            contextScoreThreshold: contextSettings.contextScoreThreshold
           }
         })
       });
@@ -148,6 +155,14 @@ export default function Home() {
     setSettings(newSettings);
   };
 
+  const handleContextSettingsChange = (newSettings: {
+    maxContextMessages: number;
+    contextScoreThreshold: number;
+    contextEnabled: boolean;
+  }) => {
+    setContextSettings(newSettings);
+  };
+
   const isInitializing = isProvidersLoading || isModelsLoading;
 
   return (
@@ -166,6 +181,8 @@ export default function Home() {
         provider={provider}
         loading={loading}
         error={error}
+        contextSettings={contextSettings}
+        onContextSettingsChange={handleContextSettingsChange}
       />
       <div className="border-t border-gray-200 dark:border-gray-800 p-4">
         <div className="max-w-5xl mx-auto flex gap-2">
