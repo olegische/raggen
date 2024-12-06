@@ -114,7 +114,7 @@ const ProviderResponse = ({
   );
 };
 
-// Компонент сообщения с ответом
+// Компоне��т сообщения с ответом
 const MessageWithResponse = ({ 
   message, 
   response, 
@@ -208,11 +208,11 @@ export default function ChatWindow({
     contextEnabled: true
   }
 }: ChatWindowProps) {
-  const bottomRef = useRef<HTMLDivElement>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && bottomRef.current?.scrollIntoView) {
+    if (bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages]);
@@ -255,7 +255,7 @@ export default function ChatWindow({
         </div>
       )}
 
-      {/* Существующий код чата */}
+      {/* Сообщения */}
       <div className="flex-1 overflow-y-auto p-4">
         {messages.length === 0 ? (
           <div className="text-center text-gray-500 dark:text-gray-400">
@@ -290,6 +290,7 @@ export default function ChatWindow({
             {error}
           </div>
         )}
+        <div ref={bottomRef} />
       </div>
     </div>
   );
