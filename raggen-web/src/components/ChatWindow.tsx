@@ -4,12 +4,15 @@ import { useEffect, useRef } from 'react';
 import { Message } from '@prisma/client';
 import { ProviderType } from '@/providers/factory';
 import { getProviderDisplayName, PROVIDER_CONFIG } from '@/config/providers';
+import { ContextSearchResult } from '@/services/context.service';
+import ContextIndicator from './ContextIndicator';
 
 interface ChatWindowProps {
   messages: Message[];
   provider: ProviderType;
   loading?: boolean;
   error?: string | null;
+  messageContexts?: Record<number, ContextSearchResult[]>;
 }
 
 // Компонент кнопки копирования
@@ -63,7 +66,19 @@ const UserMessage = ({ message }: { message: string }) => (
 );
 
 // Компонент ответа провайдера
-const ProviderResponse = ({ response, model, provider, currentProvider }: { response: string; model?: string | null; provider: string; currentProvider: ProviderType }) => {
+const ProviderResponse = ({ 
+  response, 
+  model, 
+  provider, 
+  currentProvider,
+  context
+}: { 
+  response: string; 
+  model?: string | null; 
+  provider: string; 
+  currentProvider: ProviderType;
+  context?: ContextSearchResult[];
+}) => {
   // Используем currentProvider как fallback, если provider не является валидным ProviderType
   const displayProvider = (PROVIDER_CONFIG[provider as ProviderType] ? provider : currentProvider) as ProviderType;
   
@@ -82,13 +97,30 @@ const ProviderResponse = ({ response, model, provider, currentProvider }: { resp
           )}
           <CopyButton text={response} />
         </div>
+        {context && <ContextIndicator context={context} />}
       </div>
     </div>
   );
 };
 
 // Компонент сообщения с ответом
-const MessageWithResponse = ({ message, response, model, provider, currentProvider }: { message: string; response?: string | null; model?: string | null; provider: string; currentProvider: ProviderType }) => (
+const MessageWithResponse = ({ 
+  message, 
+  response, 
+  model, 
+  provider, 
+  currentProvider,
+  messageId,
+  contexts
+}: { 
+  message: string; 
+  response?: string | null; 
+  model?: string | null; 
+  provider: string; 
+  currentProvider: ProviderType;
+  messageId: number;
+  contexts?: Record<number, ContextSearchResult[]>;
+}) => (
   <div className="space-y-4">
     <UserMessage message={message} />
     {response && (
@@ -97,6 +129,7 @@ const MessageWithResponse = ({ message, response, model, provider, currentProvid
         model={model} 
         provider={provider}
         currentProvider={currentProvider}
+        context={contexts?.[messageId]}
       />
     )}
   </div>
@@ -126,7 +159,15 @@ const ErrorState = ({ error }: { error: string }) => (
 );
 
 // Компонент списка сообщений
-const MessageList = ({ messages, currentProvider }: { messages: Message[]; currentProvider: ProviderType }) => (
+const MessageList = ({ 
+  messages, 
+  currentProvider,
+  contexts 
+}: { 
+  messages: Message[]; 
+  currentProvider: ProviderType;
+  contexts?: Record<number, ContextSearchResult[]>;
+}) => (
   <div className="space-y-4">
     {messages.map((msg) => (
       <MessageWithResponse 
@@ -136,6 +177,8 @@ const MessageList = ({ messages, currentProvider }: { messages: Message[]; curre
         model={msg.model}
         provider={msg.provider}
         currentProvider={currentProvider}
+        messageId={msg.id}
+        contexts={contexts}
       />
     ))}
   </div>
@@ -145,7 +188,8 @@ export default function ChatWindow({
   messages, 
   provider,
   loading = false,
-  error = null 
+  error = null,
+  messageContexts
 }: ChatWindowProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -162,7 +206,11 @@ export default function ChatWindow({
       ) : messages.length === 0 ? (
         <EmptyState />
       ) : (
-        <MessageList messages={messages} currentProvider={provider} />
+        <MessageList 
+          messages={messages} 
+          currentProvider={provider} 
+          contexts={messageContexts}
+        />
       )}
       {loading && <LoadingIndicator provider={provider} />}
       <div ref={bottomRef} />

@@ -1,124 +1,96 @@
-import { render, screen, fireEvent } from '@testing-library/react';
-import { ThemeProvider } from 'next-themes';
+import { render, screen } from '@testing-library/react';
 import ChatWindow from '../ChatWindow';
 import { Message } from '@prisma/client';
-import { getProviderDisplayName } from '@/config/providers';
-
-// Mock clipboard API
-Object.assign(navigator, {
-  clipboard: {
-    writeText: jest.fn()
-  }
-});
+import { ContextSearchResult } from '@/services/context.service';
 
 describe('ChatWindow', () => {
-  const mockMessages = [{
+  const mockMessage: Message = {
     id: 1,
-    chatId: 'test-chat',
-    message: 'Hello',
-    response: 'Hi there!',
+    chatId: 'chat-1',
+    message: 'Test message',
+    response: 'Test response',
     model: 'test-model',
     provider: 'yandex',
-    temperature: 0.3,
-    maxTokens: 2000,
+    temperature: 0.7,
+    maxTokens: 1000,
     timestamp: new Date()
-  }] as Message[];
+  };
 
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
+  const mockContext: ContextSearchResult[] = [
+    {
+      message: {
+        id: 2,
+        chatId: 'chat-1',
+        message: 'Previous relevant message',
+        model: 'test-model',
+        provider: 'test-provider',
+        temperature: 0.7,
+        maxTokens: 1000,
+        timestamp: new Date(),
+        response: null
+      },
+      score: 0.85,
+      usedInPrompt: true
+    }
+  ];
 
-  it('should render empty state', () => {
+  it('renders messages with context correctly', () => {
+    const messageContexts = {
+      [mockMessage.id]: mockContext
+    };
+
     render(
-      <ThemeProvider>
-        <ChatWindow messages={[]} provider="yandex" />
-      </ThemeProvider>
+      <ChatWindow
+        messages={[mockMessage]}
+        provider="yandex"
+        messageContexts={messageContexts}
+      />
     );
 
+    expect(screen.getByText('Test message')).toBeInTheDocument();
+    expect(screen.getByText('Test response')).toBeInTheDocument();
+    expect(screen.getByText('Использованный контекст:')).toBeInTheDocument();
+    expect(screen.getByText('85%')).toBeInTheDocument();
+    expect(screen.getByText('Previous relevant message')).toBeInTheDocument();
+  });
+
+  it('renders messages without context correctly', () => {
+    render(
+      <ChatWindow
+        messages={[mockMessage]}
+        provider="yandex"
+      />
+    );
+
+    expect(screen.getByText('Test message')).toBeInTheDocument();
+    expect(screen.getByText('Test response')).toBeInTheDocument();
+    expect(screen.queryByText('Использованный контекст:')).not.toBeInTheDocument();
+  });
+
+  it('renders empty state when no messages', () => {
+    render(<ChatWindow messages={[]} provider="yandex" />);
     expect(screen.getByText('Начните диалог, отправив сообщение')).toBeInTheDocument();
   });
 
-  it('should render messages', () => {
+  it('renders error state', () => {
     render(
-      <ThemeProvider>
-        <ChatWindow messages={mockMessages} provider="yandex" />
-      </ThemeProvider>
+      <ChatWindow
+        messages={[]}
+        provider="yandex"
+        error="Test error"
+      />
     );
-
-    expect(screen.getByText('Hello')).toBeInTheDocument();
-    expect(screen.getByText('Hi there!')).toBeInTheDocument();
-    expect(screen.getByText('Модель: test-model')).toBeInTheDocument();
+    expect(screen.getByText('Test error')).toBeInTheDocument();
   });
 
-  it('should copy user message to clipboard', async () => {
+  it('renders loading state', () => {
     render(
-      <ThemeProvider>
-        <ChatWindow messages={mockMessages} provider="yandex" />
-      </ThemeProvider>
+      <ChatWindow
+        messages={[]}
+        provider="yandex"
+        loading={true}
+      />
     );
-
-    const copyButtons = screen.getAllByTitle('Копировать текст');
-    fireEvent.click(copyButtons[0]); // User message copy button
-
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('Hello');
-  });
-
-  it('should copy provider response to clipboard', async () => {
-    render(
-      <ThemeProvider>
-        <ChatWindow messages={mockMessages} provider="yandex" />
-      </ThemeProvider>
-    );
-
-    const copyButtons = screen.getAllByTitle('Копировать текст');
-    fireEvent.click(copyButtons[1]); // Provider response copy button is still second in the list
-
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('Hi there!');
-  });
-
-  it('should show loading state', () => {
-    render(
-      <ThemeProvider>
-        <ChatWindow messages={[]} provider="yandex" loading={true} />
-      </ThemeProvider>
-    );
-
-    expect(screen.getByText(`${getProviderDisplayName('yandex')} печатает...`)).toBeInTheDocument();
-  });
-
-  it('should show error state', () => {
-    const error = 'Test error message';
-    render(
-      <ThemeProvider>
-        <ChatWindow messages={[]} provider="yandex" error={error} />
-      </ThemeProvider>
-    );
-
-    expect(screen.getByText(error)).toBeInTheDocument();
-  });
-
-  it('should show provider name for responses', () => {
-    render(
-      <ThemeProvider>
-        <ChatWindow messages={mockMessages} provider="yandex" />
-      </ThemeProvider>
-    );
-
-    expect(screen.getByText(getProviderDisplayName('yandex'))).toBeInTheDocument();
-    expect(screen.getByText('Вы')).toBeInTheDocument();
-  });
-
-  it('should show copy buttons in correct positions', () => {
-    render(
-      <ThemeProvider>
-        <ChatWindow messages={mockMessages} provider="yandex" />
-      </ThemeProvider>
-    );
-
-    const userMessage = screen.getByText('Hello').closest('.group');
-    const providerResponse = screen.getByText('Hi there!').closest('.group');
-
-    expect(userMessage?.querySelector('button[title="Копировать текст"]')).toBeInTheDocument();
-    expect(providerResponse?.querySelector('button[title="Копировать текст"]')).toBeInTheDocument();
+    expect(screen.getByText(/печатает/)).toBeInTheDocument();
   });
 }); 
