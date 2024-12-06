@@ -35,6 +35,8 @@ def get_vector_store() -> FAISSVectorStore:
     global _vector_store
     if _vector_store is None:
         _vector_store = FAISSVectorStore()
+        # Train the empty index immediately
+        _vector_store.train(np.zeros((1, _vector_store.dimension), dtype=np.float32))
     return _vector_store
 
 @router.post(
@@ -74,9 +76,6 @@ async def embed_text(
         
         # Store embedding in vector store
         vector_id = vector_store.add_vectors(np.expand_dims(embedding, 0))[0]
-        
-        # Train the index after adding new vectors
-        vector_store.train()
         
         return EmbeddingResponse(
             embedding=embedding.tolist(),
@@ -202,6 +201,13 @@ async def search_similar(
             query_vectors=np.expand_dims(query_embedding, 0),
             k=request.k,
         )
+        
+        # Если нет результатов, возвращаем пустой список
+        if distances.size == 0 or indices.size == 0:
+            return SearchResponse(
+                query=request.text,
+                results=[]
+            )
         
         # Convert distances to similarity scores (1 - normalized distance)
         max_distance = np.max(distances)

@@ -26,12 +26,10 @@ class FAISSVectorStore:
         
         # Create a flat L2 index (exact search)
         self.index = faiss.IndexFlatL2(dimension)
-        # Add IVF for faster search with slight accuracy trade-off
-        self.index = faiss.IndexIVFFlat(self.index, dimension, settings.n_clusters)
         
         # Track number of vectors
         self.n_vectors = 0
-        self.is_trained = False
+        self.is_trained = False  # Even though FlatL2 doesn't need training, we keep this for consistency
         
         logger.info("FAISS index created successfully")
     
@@ -46,30 +44,24 @@ class FAISSVectorStore:
             logger.warning("Index is already trained")
             return
             
-        # FAISS IVF requires at least 39 * n_clusters points for training
-        min_points = 39 * settings.n_clusters
-        if len(vectors) < min_points:
-            raise ValueError(f"Need at least {min_points} vectors for training, got {len(vectors)}")
-            
-        logger.info("Training FAISS index with %d vectors", len(vectors))
-        start_time = time.time()
+        # Validate vector dimensions
+        if vectors.shape[1] != self.dimension:
+            raise ValueError(f"Expected vectors of dimension {self.dimension}, got {vectors.shape[1]}")
         
-        try:
-            self.index.train(vectors)
-            self.is_trained = True
-            train_time = time.time() - start_time
-            logger.info("Index trained successfully in %.2f seconds", train_time)
-        except Exception as e:
-            logger.error("Failed to train index: %s", str(e))
-            raise
+        # For FlatL2 we don't actually need training, but we keep this for API consistency
+        self.is_trained = True
+        logger.info("Index trained successfully")
     
-    def add_vectors(self, vectors: np.ndarray, ids: Optional[np.ndarray] = None) -> None:
+    def add_vectors(self, vectors: np.ndarray, ids: Optional[np.ndarray] = None) -> List[int]:
         """
         Add vectors to the index.
         
         Args:
             vectors: Vectors to add (n_vectors, dimension)
             ids: Optional vector IDs (n_vectors,)
+            
+        Returns:
+            List of assigned vector IDs
         """
         if not self.is_trained:
             raise RuntimeError("Index must be trained before adding vectors")
@@ -85,10 +77,12 @@ class FAISSVectorStore:
                 # Generate sequential IDs
                 ids = np.arange(self.n_vectors, self.n_vectors + len(vectors))
             
-            self.index.add_with_ids(vectors, ids)
+            self.index.add(vectors)
             self.n_vectors += len(vectors)
             add_time = time.time() - start_time
             logger.info("Vectors added successfully in %.2f seconds", add_time)
+            
+            return ids.tolist()
         except Exception as e:
             logger.error("Failed to add vectors: %s", str(e))
             raise
@@ -99,10 +93,10 @@ class FAISSVectorStore:
         
         Args:
             query_vectors: Query vectors (n_queries, dimension)
-            k: Number of results per query
+            k: Number of results to return per query
             
         Returns:
-            Tuple of (distances, indices) arrays
+            Tuple of (distances, indices)
         """
         if not self.is_trained:
             raise RuntimeError("Index must be trained before searching")
@@ -110,21 +104,19 @@ class FAISSVectorStore:
         if query_vectors.shape[1] != self.dimension:
             raise ValueError(f"Expected vectors of dimension {self.dimension}, got {query_vectors.shape[1]}")
             
+        if k <= 0:
+            raise ValueError("k must be positive")
+            
         if k > self.n_vectors:
             logger.warning("Requested more results (%d) than available vectors (%d)", k, self.n_vectors)
-            k = min(k, self.n_vectors)
+            k = max(1, self.n_vectors)  # Ensure k is at least 1 if there are vectors
             
-        logger.info("Searching for %d similar vectors", k)
-        start_time = time.time()
-        
         try:
-            # Set number of clusters to probe (trade-off between speed and accuracy)
-            self.index.nprobe = min(settings.n_probe, settings.n_clusters)
+            if self.n_vectors == 0:
+                # Если нет векторов, возвращаем пустые массивы
+                return np.array([]).reshape(query_vectors.shape[0], 0), np.array([]).reshape(query_vectors.shape[0], 0)
+            
             distances, indices = self.index.search(query_vectors, k)
-            
-            search_time = time.time() - start_time
-            logger.info("Search completed in %.2f seconds", search_time)
-            
             return distances, indices
         except Exception as e:
             logger.error("Failed to search vectors: %s", str(e))

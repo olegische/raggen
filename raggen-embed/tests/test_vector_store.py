@@ -57,12 +57,6 @@ def test_initialization():
 
 def test_training(vector_store, sample_vectors):
     """Test index training."""
-    # Test training with insufficient vectors first
-    small_vectors = np.random.randn(5, settings.vector_dim).astype(np.float32)
-    with pytest.raises(ValueError, match="Need at least .* vectors for training"):
-        vector_store.train(small_vectors)
-    
-    # Then test training with sufficient vectors
     vector_store.train(sample_vectors)
     assert vector_store.is_trained
     
@@ -77,14 +71,16 @@ def test_adding_vectors(vector_store, sample_vectors):
     # Test adding vectors without IDs
     n_add = 10
     vectors_to_add = np.random.randn(n_add, settings.vector_dim).astype(np.float32)
-    vector_store.add_vectors(vectors_to_add)
-    assert len(vector_store) == n_add
+    ids = vector_store.add_vectors(vectors_to_add)
+    assert len(ids) == n_add
+    assert vector_store.n_vectors == n_add
     
     # Test adding vectors with IDs
     custom_ids = np.array([100, 101, 102])
     vectors_with_ids = np.random.randn(3, settings.vector_dim).astype(np.float32)
-    vector_store.add_vectors(vectors_with_ids, custom_ids)
-    assert len(vector_store) == n_add + 3
+    ids = vector_store.add_vectors(vectors_with_ids, custom_ids)
+    assert ids == custom_ids.tolist()
+    assert vector_store.n_vectors == n_add + 3
     
     # Test adding vectors with wrong dimension
     wrong_dim_vectors = np.random.randn(5, settings.vector_dim + 1).astype(np.float32)
@@ -125,9 +121,10 @@ def test_searching(vector_store, sample_vectors):
         new_store.search(query)
     
     # Test search with k > n_vectors
-    distances, indices = vector_store.search(query, k=len(sample_vectors) + 10)
-    assert distances.shape == (1, len(sample_vectors))
-    assert indices.shape == (1, len(sample_vectors))
+    k_too_large = len(sample_vectors) + 10
+    distances, indices = vector_store.search(query, k=k_too_large)
+    assert distances.shape == (1, vector_store.n_vectors)
+    assert indices.shape == (1, vector_store.n_vectors)
 
 def test_persistence(vector_store, sample_vectors):
     """Test saving and loading the index."""

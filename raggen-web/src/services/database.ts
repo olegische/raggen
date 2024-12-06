@@ -203,4 +203,15 @@ export class DatabaseService {
       }
     });
   }
+
+  /**
+   * Получение сообщений без эмбеддингов
+   */
+  async getMessagesWithoutEmbeddings(): Promise<Message[]> {
+    return this.prisma.message.findMany({
+      where: {
+        embedding: null
+      }
+    });
+  }
 } 

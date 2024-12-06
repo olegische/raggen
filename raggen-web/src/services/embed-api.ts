@@ -83,7 +83,7 @@ export class EmbedApiClient {
   async embedText(text: string): Promise<EmbeddingResponse> {
     try {
       const response = await this.retryRequest(() => 
-        this.client.post<EmbeddingResponse>('/embed', { text })
+        this.client.post<EmbeddingResponse>('/api/v1/embed', { text })
       );
       return response.data;
     } catch (error) {
@@ -101,7 +101,7 @@ export class EmbedApiClient {
   async embedTexts(texts: string[]): Promise<BatchEmbeddingResponse> {
     try {
       const response = await this.retryRequest(() => 
-        this.client.post<BatchEmbeddingResponse>('/embed/batch', { texts })
+        this.client.post<BatchEmbeddingResponse>('/api/v1/embed/batch', { texts })
       );
       return response.data;
     } catch (error) {
@@ -119,7 +119,7 @@ export class EmbedApiClient {
   async searchSimilar(text: string, k: number = 5): Promise<SearchResponse> {
     try {
       const response = await this.retryRequest(() => 
-        this.client.post<SearchResponse>('/search', { text, k })
+        this.client.post<SearchResponse>('/api/v1/search', { text, k })
       );
       return response.data;
     } catch (error) {

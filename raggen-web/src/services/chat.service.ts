@@ -81,32 +81,35 @@ export class ChatService {
         promptMessages
       );
 
-      // Создаем сообщение с эмбеддингом
+      // Сначала создаем сообщение без эмбеддинга
+      const savedMessage = await this.database.createMessage({
+        chatId: chat.id,
+        message: message,
+        response: response.text,
+        model: options?.model || 'default',
+        provider: this.provider.constructor.name.replace('Provider', '').toLowerCase(),
+        temperature: options?.temperature || GENERATION_CONFIG.temperature.default,
+        maxTokens: options?.maxTokens || GENERATION_CONFIG.maxTokens.default
+      });
+
+      // Получаем эмбеддинг и сохраняем его в FAISS
       const embedResponse = await this.contextService.embedApi.embedText(message);
-      const savedMessage = await this.database.createMessageWithEmbedding(
-        {
-          chatId: chat.id,
-          message: message,
-          response: response.text,
-          model: options?.model || 'default',
-          provider: this.provider.constructor.name.replace('Provider', '').toLowerCase(),
-          temperature: options?.temperature || GENERATION_CONFIG.temperature.default,
-          maxTokens: options?.maxTokens || GENERATION_CONFIG.maxTokens.default
-        },
-        {
-          vector: Buffer.from(new Float32Array(embedResponse.embedding).buffer),
-          vectorId: embedResponse.vector_id
-        }
-      );
+
+      // Сохраняем эмбеддинг в базу данных
+      await this.database.createEmbedding({
+        messageId: savedMessage.id,
+        vector: Buffer.from(new Float32Array(embedResponse.embedding).buffer),
+        vectorId: embedResponse.vector_id
+      });
 
       // Сохраняем использованный контекст
-      await this.contextService.saveUsedContext(savedMessage.id, context);
+      if (context.length > 0) {
+        await this.contextService.saveUsedContext(savedMessage.id, context);
+      }
 
       return {
         message: savedMessage,
-        chatId: chat.id,
-        usage: response.usage,
-        context: context.filter(ctx => ctx.usedInPrompt)
+        context
       };
 
     } catch (error) {
