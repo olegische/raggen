@@ -39,10 +39,12 @@ export class YandexGPTProvider extends BaseProvider {
       const messages = this.formatMessages(message, previousMessages);
       console.log('Formatted messages:', messages);
 
-      const yandexMessages = messages.map(msg => ({
-        role: msg.role,
-        text: msg.content
-      }));
+      const yandexMessages = messages
+        .filter(msg => msg.content)
+        .map(msg => ({
+          role: msg.role,
+          text: msg.content
+        }));
 
       const folderId = process.env.YANDEX_FOLDER_ID?.replace(/"/g, '') || '';
       const requestBody = {

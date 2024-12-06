@@ -81,7 +81,7 @@ export class PromptService {
   }
 
   /**
-   * Форматирование пользо��ательского промпта с контекстом
+   * Форматирование пользоательского промпта с контекстом
    */
   private formatUserPrompt(message: string, context: string): string {
     if (!context) {
@@ -95,10 +95,12 @@ export class PromptService {
    * Форматирование истории сообщений
    */
   formatMessageHistory(messages: Message[]): PromptMessage[] {
-    return messages.map(msg => ({
-      role: msg.provider === 'system' ? 'system' : 
-            msg.provider === 'assistant' ? 'assistant' : 'user',
-      content: msg.message
-    }));
+    return messages
+      .filter(msg => msg.message || msg.response) // Фильтруем сообщения без текста
+      .map(msg => ({
+        role: msg.provider === 'system' ? 'system' : 
+              msg.provider === 'assistant' ? 'assistant' : 'user',
+        content: msg.response || msg.message
+      }));
   }
 } 
