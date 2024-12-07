@@ -6,6 +6,12 @@ from pydantic import Field
 class Settings(BaseSettings):
     """Application settings."""
     
+    model_config = {
+        'protected_namespaces': ('settings_',),
+        'env_file': '.env',
+        'case_sensitive': False
+    }
+    
     # API settings
     api_title: str = "Raggen Embed API"
     api_description: str = "API for text embeddings and vector search"
@@ -88,9 +94,6 @@ class Settings(BaseSettings):
     )
     index_path: str = Field(
         default="data/faiss/index.faiss",
-        description="Path to save/load FAISS index"
+        description="Path to save/load FAISS index",
+        env="FAISS_INDEX_PATH"
     )
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
