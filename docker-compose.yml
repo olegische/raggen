@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  raggen-embed:
+    build:
+      context: ./raggen-embed
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./data/faiss:/app/data/faiss
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8001
+      - LOG_LEVEL=INFO
+    restart: unless-stopped
+
+  raggen-web:
+    build:
+      context: ./raggen-web
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data/sqlite:/app/prisma
+    environment:
+      - DATABASE_URL=file:/app/prisma/dev.db
+      - NEXT_PUBLIC_EMBED_API_URL=http://raggen-embed:8001
+    depends_on:
+      - raggen-embed
+    restart: unless-stopped
+
+volumes:
+  faiss-data:
+    driver: local
+  sqlite-data:
+    driver: local 

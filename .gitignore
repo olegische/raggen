@@ -66,7 +66,8 @@ htmlcov/
 *.npz
 .dylibs/
 
-# FAISS index files
+# FAISS index files and data directories
 data/faiss/
+data/sqlite/
 *.faiss
 raggen-embed/data/
