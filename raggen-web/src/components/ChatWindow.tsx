@@ -1,5 +1,7 @@
 'use client';
 
+/* eslint-disable @typescript-eslint/no-unused-vars */
+
 import { useEffect, useRef, useState } from 'react';
 import { Message } from '@prisma/client';
 import { ProviderType } from '@/providers/factory';
@@ -114,7 +116,7 @@ const ProviderResponse = ({
   );
 };
 
-// Компоне��т сообщения с ответом
+// Компонент сообщения с ответом
 const MessageWithResponse = ({ 
   message, 
   response, 

@@ -35,7 +35,7 @@ describe('ContextIndicator', () => {
   });
 
   it('does not render when context is undefined', () => {
-    // @ts-ignore - testing undefined case
+    // @ts-expect-error - testing undefined case explicitly
     const { container } = render(<ContextIndicator context={undefined} />);
     expect(container).toBeEmptyDOMElement();
   });
