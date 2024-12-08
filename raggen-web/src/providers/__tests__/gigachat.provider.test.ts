@@ -6,6 +6,13 @@ import https from 'https';
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
+interface CompletionBody {
+  messages: ProviderMessage[];
+  model: string;
+  temperature: number;
+  max_tokens: number;
+}
+
 describe('GigaChatProvider', () => {
   let provider: GigaChatProvider;
   const mockConfig: ProviderConfig = {
@@ -74,10 +81,12 @@ describe('GigaChatProvider', () => {
         'https://ngw.devices.sberbank.ru:9443/api/v2/oauth',
         'scope=GIGACHAT_API_PERS',
         expect.objectContaining({
-          headers: {
+          headers: expect.objectContaining({
             'Content-Type': 'application/x-www-form-urlencoded',
-            'Authorization': `Basic ${mockConfig.credentials}`
-          },
+            'Authorization': `Basic ${mockConfig.credentials}`,
+            'Accept': 'application/json',
+            'RqUID': expect.any(String)
+          }),
           httpsAgent: expect.any(https.Agent)
         })
       );
@@ -113,7 +122,7 @@ describe('GigaChatProvider', () => {
 
       // Проверяем только второй вызов (первый - для получения токена)
       const [, completionCall] = mockedAxios.post.mock.calls;
-      const [, completionBody] = completionCall;
+      const [, completionBody] = completionCall as [string, CompletionBody];
 
       expect(completionBody.messages).toEqual([
         ...previousMessages,

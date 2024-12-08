@@ -22,6 +22,13 @@ const responseSchema = z.object({
 
 type GigaChatResponse = z.infer<typeof responseSchema>;
 
+interface GigaChatModel {
+  id: string;
+  object: string;
+  created: number;
+  owned_by: string;
+}
+
 export class GigaChatProvider extends BaseProvider {
   private accessToken?: string;
   private tokenExpiration?: number;
@@ -106,7 +113,7 @@ export class GigaChatProvider extends BaseProvider {
         }
       );
 
-      const models = response.data.data.map((model: any) => model.id);
+      const models = response.data.data.map((model: GigaChatModel) => model.id);
       console.log('Available GigaChat models:', models);
       return models;
     } catch (error) {
