@@ -1,11 +1,16 @@
 import { ProviderFactory, ProviderType } from '@/providers/factory';
-import { GenerationOptions, ProviderMessage } from '@/providers/base.provider';
+import { GenerationOptions } from '@/providers/base.provider';
 import { GENERATION_CONFIG } from '@/config/generation';
 import { DatabaseService } from './database';
 import { ContextService } from './context.service';
 import { PromptService } from './prompt.service';
 import { EmbedApiClient } from './embed-api';
 import { SystemPromptType } from '@/config/prompts';
+import { BaseProvider } from '../providers/base.provider';
+import { Message } from '@prisma/client';
+import { database } from './database';
+import { embedApi } from './embed-api';
+import { ContextSearchResult } from './context.service';
 
 export interface SendMessageOptions extends GenerationOptions {
   maxContextMessages?: number;
