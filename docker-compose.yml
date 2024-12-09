@@ -2,9 +2,15 @@ version: '3.8'
 
 services:
   raggen-embed:
+    image: cr.yandex/${REGISTRY_ID}/raggen-embed:${VERSION}
     build:
       context: ./raggen-embed
       dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+      tags:
+        - cr.yandex/${REGISTRY_ID}/raggen-embed:${VERSION}
+        - cr.yandex/${REGISTRY_ID}/raggen-embed:latest
     ports:
       - "8001:8001"
     volumes:
@@ -16,9 +22,15 @@ services:
     restart: unless-stopped
 
   raggen-web:
+    image: cr.yandex/${REGISTRY_ID}/multimodel-chat-ru:${VERSION}
     build:
       context: ./raggen-web
       dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+      tags:
+        - cr.yandex/${REGISTRY_ID}/multimodel-chat-ru:${VERSION}
+        - cr.yandex/${REGISTRY_ID}/multimodel-chat-ru:latest
     ports:
       - "3000:3000"
     volumes:
