@@ -34,7 +34,7 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./data/sqlite:/app/prisma
+      - ./raggen-web/prisma/dev.db:/app/prisma/dev.db
     environment:
       - DATABASE_URL=file:/app/prisma/dev.db
       - NEXT_PUBLIC_EMBED_API_URL=http://raggen-embed:8001
