@@ -14,10 +14,22 @@ if [ "$WEB_VERSION" != "$EMBED_VERSION" ]; then
     exit 1
 fi
 
-# Export version to .env file
-echo "VERSION=$WEB_VERSION" > .env
+# Create temporary file
+tmp_file=$(mktemp)
 
-# Add other environment variables from .env.example
-grep -v "^VERSION=" .env.example >> .env
+# If .env exists, copy all lines except VERSION to temp file
+if [ -f .env ]; then
+    grep -v "^VERSION=" .env > "$tmp_file"
+else
+    # If .env doesn't exist, copy from .env.example
+    cp .env.example "$tmp_file"
+fi
+
+# Add new VERSION to the beginning of the file
+echo "VERSION=$WEB_VERSION" > .env
+cat "$tmp_file" >> .env
+
+# Clean up
+rm "$tmp_file"
 
 echo "Version $WEB_VERSION has been set in .env" 
