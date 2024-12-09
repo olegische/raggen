@@ -113,6 +113,7 @@ npm test
 - [Примеры использования](docs/examples.md)
 - [Настройка окружения](docs/environment.md)
 - [Инструкция по развертыванию](docs/deployment.md)
+- [Процедуры резервного копирования](docs/backup.md)
 - [Процедуры отката](docs/rollback.md)
 
 ## Лицензия
