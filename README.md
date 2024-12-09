@@ -105,16 +105,27 @@ npm test
 ```
 
 ## Документация
-- [Архитектура проекта](docs/architecture.md)
+
+### [Пользовательская документация](docs/user/README.md)
+Руководства по использованию системы:
+- [Начало работы](docs/user/getting-started.md)
+- [Основные функции](docs/user/features.md)
+- [Настройка](docs/user/configuration.md)
+- [Работа с контекстом](docs/user/context.md)
+- [Провайдеры и модели](docs/user/providers.md)
+- [FAQ](docs/user/faq.md)
+
+### [Техническая документация](docs/tech/README.md)
+Документация для разработчиков и администраторов:
+- [Архитектура проекта](docs/tech/architecture.md)
 - [План релизов](ROADMAP.md)
-- [Описание API](docs/app-description.md)
-- [Схема базы данных](docs/database-schema.md)
-- [Конфигурация сервисов](docs/configuration.md)
-- [Примеры использования](docs/examples.md)
-- [Настройка окружения](docs/environment.md)
-- [Инструкция по развертыванию](docs/deployment.md)
-- [Процедуры резервного копирования](docs/backup.md)
-- [Процедуры отката](docs/rollback.md)
+- [Схема базы данных](docs/tech/database-schema.md)
+- [Конфигурация сервисов](docs/tech/configuration.md)
+- [Примеры использования](docs/tech/examples.md)
+- [Настройка окружения](docs/tech/environment.md)
+- [Инструкция по развертыванию](docs/tech/deployment.md)
+- [Процедуры резервного копирования](docs/tech/backup.md)
+- [Процедуры отката](docs/tech/rollback.md)
 
 ## Лицензия
 MIT
