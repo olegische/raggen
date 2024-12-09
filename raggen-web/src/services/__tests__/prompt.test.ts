@@ -1,4 +1,4 @@
-import { PromptService, PromptMessage } from '../prompt.service';
+import { PromptService } from '../prompt.service';
 import { Message } from '@prisma/client';
 import { ContextSearchResult } from '../context.service';
 import { SYSTEM_PROMPTS } from '../../config/prompts';
