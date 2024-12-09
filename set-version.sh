@@ -25,15 +25,16 @@ fi
 # Copy all lines from .env.example to temp file
 cp .env.example "$tmp_file"
 
-# Update VERSION in temp file
-sed -i '' "s/^VERSION=.*$/VERSION=$WEB_VERSION/" "$tmp_file" 2>/dev/null || sed -i "s/^VERSION=.*$/VERSION=$WEB_VERSION/" "$tmp_file"
+# Add VERSION to the beginning of the file
+echo "VERSION=$WEB_VERSION" > .env
+cat "$tmp_file" >> .env
 
-# If we have REGISTRY_ID from existing .env, update it in temp file
+# If we have REGISTRY_ID from existing .env, update it
 if [ ! -z "$REGISTRY_ID" ]; then
-    sed -i '' "s/^REGISTRY_ID=.*$/REGISTRY_ID=$REGISTRY_ID/" "$tmp_file" 2>/dev/null || sed -i "s/^REGISTRY_ID=.*$/REGISTRY_ID=$REGISTRY_ID/" "$tmp_file"
+    sed -i '' "s/^REGISTRY_ID=.*$/REGISTRY_ID=$REGISTRY_ID/" .env 2>/dev/null || sed -i "s/^REGISTRY_ID=.*$/REGISTRY_ID=$REGISTRY_ID/" .env
 fi
 
-# Move temp file to .env
-mv "$tmp_file" .env
+# Clean up
+rm "$tmp_file"
 
 echo "Version $WEB_VERSION has been set in .env" 
