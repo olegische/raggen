@@ -6,11 +6,6 @@ import { ContextService } from './context.service';
 import { PromptService } from './prompt.service';
 import { EmbedApiClient } from './embed-api';
 import { SystemPromptType } from '@/config/prompts';
-import { BaseProvider } from '../providers/base.provider';
-import { Message } from '@prisma/client';
-import { database } from './database';
-import { embedApi } from './embed-api';
-import { ContextSearchResult } from './context.service';
 
 export interface SendMessageOptions extends GenerationOptions {
   maxContextMessages?: number;
@@ -86,35 +81,35 @@ export class ChatService {
         promptMessages
       );
 
-      // Сначала создаем сообщение без эмбеддинга
-      const savedMessage = await this.database.createMessage({
-        chatId: chat.id,
-        message: message,
-        response: response.text,
-        model: options?.model || 'default',
-        provider: this.provider.constructor.name.replace('Provider', '').toLowerCase(),
-        temperature: options?.temperature || GENERATION_CONFIG.temperature.default,
-        maxTokens: options?.maxTokens || GENERATION_CONFIG.maxTokens.default
-      });
-
-      // Получаем эмбеддинг и сохраняем его в FAISS
+      // Получаем эмбеддинг
       const embedResponse = await this.contextService.embedApi.embedText(message);
 
-      // Сохраняем эмбеддинг в базу данных
-      await this.database.createEmbedding({
-        messageId: savedMessage.id,
-        vector: Buffer.from(new Float32Array(embedResponse.embedding).buffer),
-        vectorId: embedResponse.vector_id
-      });
+      // Создаем сообщение и эмбеддинг в одной транзакции
+      const savedMessage = await this.database.createMessageWithEmbedding(
+        {
+          chatId: chat.id,
+          message: message,
+          response: response.text,
+          model: options?.model || 'default',
+          provider: this.provider.constructor.name.replace('Provider', '').toLowerCase(),
+          temperature: options?.temperature || GENERATION_CONFIG.temperature.default,
+          maxTokens: options?.maxTokens || GENERATION_CONFIG.maxTokens.default
+        },
+        {
+          vector: Buffer.from(new Float32Array(embedResponse.embedding).buffer),
+          vectorId: embedResponse.vector_id
+        }
+      );
 
-      // Сохраняем использованный контекст
+      // Сохраняем использованный контекст через context service
       if (context.length > 0) {
         await this.contextService.saveUsedContext(savedMessage.id, context);
       }
 
       return {
         message: savedMessage,
-        context
+        context,
+        chatId: chat.id
       };
 
     } catch (error) {
