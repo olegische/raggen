@@ -22,15 +22,15 @@ services:
     restart: unless-stopped
 
   raggen-web:
-    image: cr.yandex/${REGISTRY_ID}/multimodel-chat-ru:${VERSION}
+    image: cr.yandex/${REGISTRY_ID}/raggen-web:${VERSION}
     build:
       context: ./raggen-web
       dockerfile: Dockerfile
       platforms:
         - linux/amd64
       tags:
-        - cr.yandex/${REGISTRY_ID}/multimodel-chat-ru:${VERSION}
-        - cr.yandex/${REGISTRY_ID}/multimodel-chat-ru:latest
+        - cr.yandex/${REGISTRY_ID}/raggen-web:${VERSION}
+        - cr.yandex/${REGISTRY_ID}/raggen-web:latest
     ports:
       - "3000:3000"
     volumes:
