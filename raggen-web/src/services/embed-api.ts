@@ -49,7 +49,7 @@ export class EmbedApiClient {
 
   private async retryRequest<T>(request: () => Promise<AxiosResponse<T>>): Promise<AxiosResponse<T>> {
     let retryCount = 0;
-    let lastError: any;
+    let lastError: Error | unknown;
 
     while (retryCount < this.maxRetries) {
       try {
