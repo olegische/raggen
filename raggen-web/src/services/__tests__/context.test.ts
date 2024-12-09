@@ -1,7 +1,7 @@
 import { ContextService, ContextSearchResult } from '../context.service';
 import { DatabaseService } from '../database';
 import { EmbedApiClient } from '../embed-api';
-import { Message, Embedding } from '@prisma/client';
+import { Message } from '@prisma/client';
 
 // Мокаем зависимости
 jest.mock('../database');
