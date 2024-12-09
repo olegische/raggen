@@ -108,6 +108,7 @@ npm test
 - [Архитектура проекта](docs/architecture.md)
 - [План релизов](ROADMAP.md)
 - [Описание API](docs/app-description.md)
+- [Схема базы данных](docs/database-schema.md)
 - [Инструкция по развертыванию](docs/deployment.md)
 
 ## Лицензия
