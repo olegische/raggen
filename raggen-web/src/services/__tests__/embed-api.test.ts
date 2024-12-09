@@ -17,7 +17,6 @@ jest.mock('axios', () => ({
 describe('EmbedApiClient', () => {
   let client: EmbedApiClient;
   let axiosInstance: jest.Mocked<typeof axios>;
-  let lastError: Error;
 
   beforeEach(() => {
     // Очищаем моки перед каждым тестом
