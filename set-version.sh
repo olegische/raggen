@@ -17,19 +17,23 @@ fi
 # Create temporary file
 tmp_file=$(mktemp)
 
-# If .env exists, copy all lines except VERSION to temp file
+# If .env exists, get REGISTRY_ID from it
 if [ -f .env ]; then
-    grep -v "^VERSION=" .env > "$tmp_file"
-else
-    # If .env doesn't exist, copy from .env.example
-    cp .env.example "$tmp_file"
+    REGISTRY_ID=$(grep "^REGISTRY_ID=" .env | cut -d'=' -f2)
 fi
 
-# Add new VERSION to the beginning of the file
-echo "VERSION=$WEB_VERSION" > .env
-cat "$tmp_file" >> .env
+# Copy all lines from .env.example to temp file
+cp .env.example "$tmp_file"
 
-# Clean up
-rm "$tmp_file"
+# Update VERSION in temp file
+sed -i '' "s/^VERSION=.*$/VERSION=$WEB_VERSION/" "$tmp_file" 2>/dev/null || sed -i "s/^VERSION=.*$/VERSION=$WEB_VERSION/" "$tmp_file"
+
+# If we have REGISTRY_ID from existing .env, update it in temp file
+if [ ! -z "$REGISTRY_ID" ]; then
+    sed -i '' "s/^REGISTRY_ID=.*$/REGISTRY_ID=$REGISTRY_ID/" "$tmp_file" 2>/dev/null || sed -i "s/^REGISTRY_ID=.*$/REGISTRY_ID=$REGISTRY_ID/" "$tmp_file"
+fi
+
+# Move temp file to .env
+mv "$tmp_file" .env
 
 echo "Version $WEB_VERSION has been set in .env" 
