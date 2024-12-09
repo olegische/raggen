@@ -1,6 +1,6 @@
 import { DatabaseService } from './database';
 import { EmbedApiClient } from './embed-api';
-import { Message, Context } from '@prisma/client';
+import { Message } from '@prisma/client';
 
 export interface ContextSearchResult {
   message: Message;
