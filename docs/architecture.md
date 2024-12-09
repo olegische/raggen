@@ -1,7 +1,7 @@
-# Архитектура Multimodal RAG RU
+# Архитектура RAGGEN
 
 ## 1. Общий обзор
-Multimodal RAG RU - это веб-приложение для взаимодействия с различными языковыми моделями (LLM), использующее подход Retrieval-Augmented Generation (RAG) для улучшения качества ответов. Проект организован как монорепозиторий, содержащий несколько сервисов.
+RAGGEN - это система для работы с большими языковыми моделями с поддержкой контекстного поиска на русском языке. Проект использует подход Retrieval-Augmented Generation (RAG) для улучшения качества ответов и организован как монорепозиторий, содержащий два основных сервиса.
 
 ## 2. Структура монорепозитория
 
@@ -12,133 +12,101 @@ raggen/
 │   │   ├── app/                  # Next.js приложение
 │   │   │   ├── api/             # API Routes
 │   │   │   │   ├── chat/        # Обработка сообщений чата
-│   │   │   │   │   └── route.ts
+│   │   │   │   │   └── route.ts # POST /api/chat
 │   │   │   │   ├── messages/    # История сообщений
-│   │   │   │   │   └── route.ts
-│   │   │   │   ├── files/      # Загрузка файлов
-│   │   │   │   │   └── route.ts
-│   │   │   │   └── models/     # API моделей
-│   │   │   │       └── route.ts
+│   │   │   │   │   └── route.ts # GET /api/messages
+│   │   │   │   ├── providers/   # API провайдеров
+│   │   │   │   │   └── route.ts # GET /api/providers
+│   │   │   │   └── models/      # API моделей
+│   │   │   │       └── route.ts # GET /api/models
 │   │   │   ├── fonts/          # Шрифты приложения
-│   │   │   │   ├── GeistMonoVF.woff
-│   │   │   │   └── GeistVF.woff
-│   │   │   ├── favicon.ico
-│   │   │   ├── globals.css     # Глобальные стили и Tailwind
+│   │   │   ├── globals.css     # Глобальные стили
 │   │   │   ├── layout.tsx      # Корневой layout
 │   │   │   └── page.tsx        # Главная страница
 │   │   │
 │   │   ├── components/         # React компоненты
-│   │   │   ├── chat/          # Компоненты чата
-│   │   │   │   ├── ChatWindow.tsx
-│   │   │   │   ├── Message.tsx
-│   │   │   │   └── MessageList.tsx
-│   │   │   ├── ui/            # UI компоненты
-│   │   │   │   ├── Button.tsx
-│   │   │   │   ├── Input.tsx
-│   │   │   │   └── Select.tsx
-│   │   │   ├── settings/      # Компоненты настроек
-│   │   │   │   ├── GenerationSettings.tsx
-│   │   │   │   └── ModelSelector.tsx
+│   │   │   ├── ChatWindow.tsx
+│   │   │   ├── ContextIndicator.tsx
+│   │   │   ├── ContextSettings.tsx
 │   │   │   ├── Footer.tsx
+│   │   │   ├── GenerationSettings.tsx
 │   │   │   ├── Header.tsx
-│   │   │   └── ThemeProvider.tsx
+│   │   │   ├── ModelSelector.tsx
+│   │   │   ├── ProviderSelector.tsx
+│   │   │   ├── ThemeProvider.tsx
+│   │   │   └── ThemeToggle.tsx
 │   │   │
-│   │   ├── providers/         # Провайдеры LLM
-│   │   │   ├── base/
-│   │   │   │   ├── provider.ts
-│   │   │   │   └── types.ts
-│   │   │   ├── yandex/
-│   │   │   │   ├── provider.ts
-│   │   │   │   ├── types.ts
-│   │   │   │   └── utils.ts
+│   │   ├── config/           # Конфигурация
+│   │   │   ├── generation.ts
+│   │   │   ├── prompts.ts
+│   │   │   └── providers.ts
+│   │   │
+│   │   ├── lib/             # Общие утилиты
+│   │   │   └── db.ts
+│   │   │
+│   │   ├── providers/       # Провайдеры LLM
+│   │   │   ├── base.provider.ts
+│   │   │   ├── factory.ts
 │   │   │   ├── gigachat/
-│   │   │   │   ├── provider.ts
-│   │   │   │   ├── types.ts
-│   │   │   │   └── utils.ts
-│   │   │   └── factory.ts
+│   │   │   │   └── provider.ts
+│   │   │   └── yandex/
+│   │   │       └── provider.ts
 │   │   │
-│   │   ├── services/         # Сервисный слой
+│   │   ├── services/       # Сервисный слой
 │   │   │   ├── chat.service.ts
+│   │   │   ├── context.service.ts
+│   │   │   ├── database.ts
+│   │   │   ├── embed-api.ts
 │   │   │   ├── model.service.ts
-│   │   │   ├── provider.service.ts
-│   │   │   └── embed.service.ts
+│   │   │   ├── prompt.service.ts
+│   │   │   └── provider.service.ts
 │   │   │
-│   │   └── lib/            # Общие утилиты
-│   │       ├── db.ts      # Инициализация Prisma
-│   │       ├── config.ts  # Конфигурация
-│   │       ├── errors.ts  # Обработка ошибок
-│   │       └── utils.ts   # Вспомогательные функции
+│   │   └── types/         # TypeScript типы
 │   │
-│   ├── prisma/            # Схема базы данных
+│   ├── prisma/           # База данных
 │   │   ├── schema.prisma
 │   │   └── migrations/
 │   │
-│   ├── public/           # Статические файлы
-│   │   └── images/
-│   │
 │   ├── tests/           # Тесты
-│   │   ├── unit/
-│   │   └── integration/
+│   │   └── __tests__/
 │   │
-│   ├── .env.example     # Пример переменных окружения
-│   ├── package.json
-│   ├── tsconfig.json
-│   └── tailwind.config.js
+│   └── public/          # Статические файлы
 │
-├── raggen-embed/         # Python сервис для работы с эмбеддингами
+├── raggen-embed/        # Python сервис для эмбеддингов
 │   ├── src/
-│   │   ├── api/         # FastAPI endpoints
-│   │   │   ├── routes/
-│   │   │   │   ├── embed.py
-│   │   │   │   ├── search.py
-│   │   │   │   └── chunks.py
-│   │   │   ├── middleware/
-│   │   │   │   └── auth.py
-│   │   │   └── app.py
+│   │   ├── api/        # FastAPI endpoints
+│   │   │   ├── embeddings.py
+│   │   │   └── models.py
 │   │   │
-│   │   ├── embeddings/  # Логика работы с эмбеддингами
-│   │   │   ├── service.py
-│   │   │   ├── models.py
-│   │   │   └── utils.py
+│   │   ├── core/      # Основная логика
+│   │   │   ├── embeddings.py
+│   │   │   └── vector_store/
+│   ��   │       ├── faiss_store.py
+│   │   │       └── persistent_store.py
 │   │   │
-│   │   ├── models/     # Модели данных
-│   │   │   ├── document.py
-│   │   │   ├── chunk.py
-│   │   │   └── embedding.py
-│   │   │
-│   │   ├── storage/    # Работа с хранилищем
-│   │   │   ├── vector_store.py
-│   │   │   └── sqlite.py
+│   │   ├── config/    # Конфигурация
+│   │   │   └── settings.py
 │   │   │
 │   │   └── utils/     # Утилиты
-│   │       ├── text.py
-│   │       ├── config.py
-│   │       └── logger.py
+│   │       └── logging.py
 │   │
-│   ├── tests/
-│   │   ├── unit/
-│   │   │   ├── test_embeddings.py
-│   │   │   └── test_chunks.py
-│   │   └── integration/
-│   │       └── test_api.py
+│   ├── tests/         # Тесты
+│   │   ├── test_api.py
+│   │   ├── test_embeddings.py
+│   │   └── test_vector_store.py
 │   │
-│   ├── docker/
-│   │   ├── Dockerfile
-│   │   └── docker-compose.yml
-│   │
-│   ├── requirements/
-│   │   ├── base.txt
-│   │   ├── dev.txt
-│   │   └── prod.txt
-│   │
-│   ├── .env.example
-│   ├── README.md
-│   └── setup.py
+│   └── data/          # Данные
+│       └── faiss/     # Индексы FAISS
 │
-└── docs/               # Документация проекта
+├── data/              # Общие данные
+│   ├── faiss/         # Индексы FAISS
+│   └── sqlite/        # База данных SQLite
+│
+└── docs/             # Документация
     ├── architecture.md
-    ├── api-docs.md
-    └── deployment.md
+    ├── backup.md
+    ├── deployment.md
+    └── rollback.md
 ```
 
 ## 3. Компоненты системы
@@ -147,15 +115,19 @@ raggen/
 
 #### 3.1.1. Frontend
 - **Next.js** для серверного рендеринга
-- **Tailwind CSS** для стилизации
 - **React** компоненты для UI
+- **Tailwind CSS** для стилизации
 
 ##### Основные компоненты
-- ChatWindow: Отображение истории сообщений
-- Footer: Ввод сообщений, загрузка файлов контекста и настройки
-- Header: Навигация и выбор моделей
-- ModelSelector: Выбор провайдера и модели
+- ChatWindow: Отображение истории сообщений и контекста
+- ContextIndicator: Отображение использованного контекста
+- ContextSettings: Настройки работы с контекстом
 - GenerationSettings: Настройки генерации текста
+- ModelSelector: Выбор модели
+- ProviderSelector: Выбор провайдера
+- ThemeProvider: Управление темой
+- Footer: Ввод сообщений
+- Header: Навигация
 
 #### 3.1.2. Backend API
 - **API Routes** для обработки запросов
@@ -165,23 +137,68 @@ raggen/
 ##### API Endpoints
 - POST /api/chat: Обработка сообщений чата
 - GET /api/messages: История сообщений
-- POST /api/files: Загрузка файлов
+- GET /api/providers: Доступные провайдеры
 - GET /api/models: Доступные модели
 
 #### 3.1.3. Провайдеры LLM
-- YandexGPT Provider
-- GigaChat Provider
-- Абстрактный BaseProvider
-- ProviderFactory для создания инстансов
+- BaseProvider: Абстрактный базовый класс
+- YandexGPTProvider: Интеграция с Yandex GPT
+- GigaChatProvider: Интеграция с GigaChat
+- ProviderFactory: Фабрика провайдеров
 
-#### 3.1.4. База данных
+#### 3.1.4. Сервисный слой
+- ChatService: Управление чатами и сообщениями
+- ContextService: Поиск и управление контекс��ом
+- DatabaseService: Работа с базой данных
+- EmbedApiClient: Взаимодействие с raggen-embed
+- ModelService: Управление моделями
+- PromptService: Форматирование промптов
+- ProviderService: Управление провайдерами
+
+#### 3.1.5. База данных
 - **Prisma ORM**
 - **SQLite** для хранения данных
 - Схема данных:
-  ```
-  User (1) --- (n) Chat (1) --- (n) Message
-  Document (1) --- (n) Chunk
-  ```
+```prisma
+model Chat {
+  id        String    @id @default(uuid())
+  provider  String    
+  messages  Message[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Message {
+  id          Int      @id @default(autoincrement())
+  chatId      String
+  message     String   
+  response    String?  
+  model       String   
+  provider    String   
+  timestamp   DateTime @default(now())
+  temperature Float    
+  maxTokens   Int      
+  embedding   Embedding?
+  usedContext Context[]
+}
+
+model Embedding {
+  id          Int      @id @default(autoincrement())
+  messageId   Int      @unique
+  vector      Bytes    
+  vectorId    Int      
+  createdAt   DateTime @default(now())
+}
+
+model Context {
+  id          Int      @id @default(autoincrement())
+  messageId   Int      
+  sourceId    Int      
+  score       Float    
+  usedInPrompt Boolean 
+  createdAt   DateTime @default(now())
+}
+```
 
 ### 3.2. raggen-embed (Python)
 
@@ -191,98 +208,98 @@ raggen/
 - Swagger документация
 
 ##### API Endpoints
-- POST /api/embed: Создание эмбеддингов
-- GET /api/search: Поиск похожих документов
-- POST /api/chunks: Создание чанков из документов
+- POST /api/v1/embed: Создание эмбеддинга
+- POST /api/v1/embed/batch: Пакетное создание эмбеддингов
+- POST /api/v1/search: Поиск похожих текстов
 
 #### 3.2.2. Embedding Service
-- Генерация эмбеддингов с использованием модели all-MiniLM-L6-v2 (HuggingFace)
-- Чанкинг документов
-- Кэширование результатов
+- Модель all-MiniLM-L6-v2 (384-мерные векторы)
+- Кэширование модели
+- Оптимизация памяти
+- Обработка ошибок
 
 #### 3.2.3. Vector Store
-- FAISS для хранения и поиска 384-мерных векторов (размерность all-MiniLM-L6-v2)
-- Интеграция с SQLite для метаданных
-- Оптимизация поиска
+- FAISS для векторного поиска
+- Персистентное хранение индексов
+- Автоматическое резервное копирование
+- Восстановление после сбоев
 
 ## 4. Взаимодействие компонентов
 
-### 4.1. Процесс обработки запроса
-1. Пользователь отправляет сообщение через UI
-2. raggen-web обрабатывает запрос и ищет релевантный контекст
-3. Запрос к raggen-embed для получения похожих документов
-4. Объединение контекста с запросом пользователя
-5. Отправка в LLM API (YandexGPT/GigaChat)
-6. Возврат ответа пользователю
+### 4.1. Обработка сообщений
+1. Пользователь отправляет сообщение
+2. ChatService обрабатывает запрос
+3. ContextService ищет релевантный контекст через raggen-embed
+4. PromptService формирует промпт с контекстом
+5. Провайдер LLM генерирует ответ
+6. Ответ сохраняется и отображается пользователю
 
-### 4.2. Процесс загрузки документов
-1. Пользователь загружает документ
-2. raggen-web сохраняет документ и отправляет в raggen-embed
-3. raggen-embed разбивает на чанки и создает эмбеддинги
-4. Эмбеддинги сохраняются в vector store
-5. Метаданные сохраняются в SQLite
+### 4.2. Контекстный поиск
+1. Новое сообщение векторизуется через raggen-embed
+2. Эмбеддинг схраняется в FAISS и БД
+3. Выполняется поиск похожих сообщений
+4. Контекст приоритизируется и фильтруется
+5. Релевантный контекст добавляется в промпт
 
 ## 5. Безопасность
 
-### 5.1. API Security
+### 5.1. API
 - Rate limiting
 - Валидация входных данных
 - CORS настройки
-- Защита от SQL-инъекций через Prisma
+- Логирование запросов
 
 ### 5.2. Данные
 - Безопасное хранение API ключей
-- Шифрование чувствительных данных
-- Логирование доступа
+- Шифрование конфигурации
+- Изоляция компонентов через Docker
 
-## 6. Развертывание
+## 6. Мониторинг
 
-### 6.1. raggen-web
-- Vercel для Next.js приложения
-- Docker для API сервиса
-- Nginx как reverse proxy
+### 6.1. Логирование
+- Структурированные логи с request ID
+- Уровни логирования
+- Ротация логов
 
-### 6.2. raggen-embed
-- Docker контейнер
-- Yandex Cloud / Sber Cloud
-- Масштабирование через Docker Compose
+### 6.2. Метрики
+- Latency API
+- Использование памяти
+- Размер индексов
+- Статистика запросов
 
-## 7. Мониторинг
+## 7. Требования к окружению
 
-### 7.1. Логирование
-- Структурированные логи
-- Отслеживание ошибок
-- Мониторинг производительности
+### 7.1. Системные требования
+- Python 3.11+
+- Node.js 18+
+- Docker и Docker Compose
+- Git
 
-### 7.2. Метрики
-- Latency API endpoints
-- Использование ресурсов
-- Качество ответов LLM
+### 7.2. Ресурсы
+- CPU: 2+ cores
+- RAM: 4GB+
+- Диск: 20GB+
+- Сеть: 100Mbps+
 
-## 8. Зависимости
-
-### 8.1. raggen-web
+### 7.3. Зависимости
 ```json
+// raggen-web
 {
   "dependencies": {
-    "next": "14.x",
-    "react": "18.x",
-    "prisma": "5.x",
-    "tailwindcss": "3.x"
+    "@prisma/client": "^5.22.0",
+    "axios": "^1.6.2",
+    "next": "15.0.3",
+    "react": "^18.2.0",
+    "zod": "^3.x"
+  }
+}
+
+// raggen-embed
+{
+  "dependencies": {
+    "fastapi": "^0.109.2",
+    "sentence-transformers": "^2.3.1",
+    "faiss-cpu": "^1.7.4"
   }
 }
 ```
-
-### 8.2. raggen-embed
-```python
-sentence-transformers==2.2.2  # Для модели all-MiniLM-L6-v2
-fastapi>=0.100.0
-faiss-cpu>=1.7.4
-pydantic>=2.0.0
-```
-
-## 9. Требования к окружению
-- Node.js 20.x
-- Python 3.11+
-- Docker
-- Git 
