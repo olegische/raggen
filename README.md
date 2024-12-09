@@ -111,6 +111,7 @@ npm test
 - [Схема базы данных](docs/database-schema.md)
 - [Конфигурация сервисов](docs/configuration.md)
 - [Примеры использования](docs/examples.md)
+- [Настройка окружения](docs/environment.md)
 - [Инструкция по развертыванию](docs/deployment.md)
 
 ## Лицензия
