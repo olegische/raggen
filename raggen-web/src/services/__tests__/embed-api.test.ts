@@ -11,12 +11,13 @@ jest.mock('axios', () => ({
       },
     },
   })),
-  isAxiosError: jest.fn((error: any): error is AxiosError => true),
+  isAxiosError: jest.fn((error: unknown): error is AxiosError => true),
 }));
 
 describe('EmbedApiClient', () => {
   let client: EmbedApiClient;
-  let axiosInstance: any;
+  let axiosInstance: jest.Mocked<typeof axios>;
+  let lastError: Error;
 
   beforeEach(() => {
     // Очищаем моки перед каждым тестом
@@ -61,7 +62,7 @@ describe('EmbedApiClient', () => {
       const result = await client.embedText('test text');
 
       expect(result).toEqual(mockResponse);
-      expect(axiosInstance.post).toHaveBeenCalledWith('/embed', { text: 'test text' });
+      expect(axiosInstance.post).toHaveBeenCalledWith('/api/v1/embed', { text: 'test text' });
     });
 
     it('should handle API error with details', async () => {
@@ -110,7 +111,7 @@ describe('EmbedApiClient', () => {
       const result = await client.embedTexts(['test text 1', 'test text 2']);
 
       expect(result).toEqual(mockResponse);
-      expect(axiosInstance.post).toHaveBeenCalledWith('/embed/batch', {
+      expect(axiosInstance.post).toHaveBeenCalledWith('/api/v1/embed/batch', {
         texts: ['test text 1', 'test text 2'],
       });
     });
@@ -151,7 +152,7 @@ describe('EmbedApiClient', () => {
       const result = await client.searchSimilar('test query', 2);
 
       expect(result).toEqual(mockResponse);
-      expect(axiosInstance.post).toHaveBeenCalledWith('/search', {
+      expect(axiosInstance.post).toHaveBeenCalledWith('/api/v1/search', {
         text: 'test query',
         k: 2,
       });
@@ -162,7 +163,7 @@ describe('EmbedApiClient', () => {
 
       await client.searchSimilar('test query');
 
-      expect(axiosInstance.post).toHaveBeenCalledWith('/search', {
+      expect(axiosInstance.post).toHaveBeenCalledWith('/api/v1/search', {
         text: 'test query',
         k: 5,
       });
