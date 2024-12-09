@@ -81,8 +81,8 @@ raggen/
 │   │   ├── core/      # Основная логика
 │   │   │   ├── embeddings.py
 │   │   │   └── vector_store/
-│   ��   │       ├── faiss_store.py
-│   │   │       └── persistent_store.py
+│   │       ├── faiss_store.py
+│   │       └── persistent_store.py
 │   │   │
 │   │   ├── config/    # Конфигурация
 │   │   │   └── settings.py
@@ -114,91 +114,163 @@ raggen/
 ### 3.1. raggen-web (Next.js)
 
 #### 3.1.1. Frontend
-- **Next.js** для серверного рендеринга
-- **React** компоненты для UI
-- **Tailwind CSS** для стилизации
 
 ##### Основные компоненты
-- ChatWindow: Отображение истории сообщений и контекста
-- ContextIndicator: Отображение использованного контекста
-- ContextSettings: Настройки работы с контекстом
-- GenerationSettings: Настройки генерации текста
-- ModelSelector: Выбор модели
-- ProviderSelector: Выбор провайдера
-- ThemeProvider: Управление темой
-- Footer: Ввод сообщений
-- Header: Навигация
 
-#### 3.1.2. Backend API
-- **API Routes** для обработки запросов
-- Интеграция с провайдерами LLM
-- Взаимодействие с raggen-embed через REST API
+###### ChatWindow
+- **Назначение**: Основной компонент для отображения чата
+- **Структура**:
+  - UserMessage: Компонент сообщения пользователя
+  - ProviderResponse: Компонент ответа от LLM
+  - ContextIndicator: Индикатор использованного контекста
+  - LoadingIndicator: Индикатор загрузки
+  - EmptyState: Состояние пустого чата
+  - ErrorState: Отображение ошибок
+- **Функциональность**:
+  - Отображение истории сообщений
+  - Автоскроллинг к последнему сообщению
+  - Копирование текста сообщений
+  - Управление настройками контекста
+  - Отображение метаданных (модель, провайдер)
 
-##### API Endpoints
-- POST /api/chat: Обработка сообщений чата
-- GET /api/messages: История сообщений
-- GET /api/providers: Доступные провайдеры
-- GET /api/models: Доступные модели
+###### Header
+- **Назначение**: Управление основными настройками
+- **Компоненты**:
+  - ProviderSelector: Выбор LLM провайдера
+  - ModelSelector: Выбор модели для выбранного провайдера
+  - ThemeToggle: Переключение темы оформления
+- **Функциональность**:
+  - Динамическая загрузка доступных моделей
+  - Сохранение настроек
+  - Адаптивный дизайн
+
+###### Footer
+- **Назначение**: Ввод сообщений и управление генерацией
+- **Компоненты**:
+  - Input: Поле ввода сообщения
+  - GenerationSettings: Настройки генерации текста
+  - SendButton: Кнопка отправки
+- **Функциональность**:
+  - Отправка сообщений (Enter или кнопка)
+  - Настройка параметров генерации
+  - Индикация состояния загрузки
+
+#### 3.1.2. Сервисный слой
+
+##### ChatService
+- **Назначение**: Центральный сервис обработки сообщений
+- **Основные операции**:
+  - Управление чатами и сообщениями
+  - Интеграция с провайдерами LLM
+  - Работа с контекстом
+- **Ключевые методы**:
+  ```typescript
+  sendMessage(message: string, chatId?: string, options?: SendMessageOptions): Promise<{
+    message: Message;
+    context: ContextSearchResult[];
+    chatId: string;
+  }>
+  ```
+
+##### ContextService
+- **Назначение**: Управление контекстным поиском
+- **Функциональность**:
+  - Поиск релевантного контекста
+  - Векторизация сообщений
+  - Сохранение использованного контекста
+- **Взаимодействие**:
+  - Интеграция с raggen-embed
+  - Работа с FAISS индексами
+
+##### PromptService
+- **Назначение**: Форматирование промптов
+- **Функциональность**:
+  - Форматирование системных промптов
+  - Добавление контекста
+  - Управление историей сообщений
+
+##### DatabaseService
+- **Назначение**: Работа с базой данных
+- **Операции**:
+  - CRUD операции с чатами
+  - Управление сообщениями
+  - Сохранение эмбеддингов
+  - Работа с контекстом
 
 #### 3.1.3. Провайдеры LLM
-- BaseProvider: Абстрактный базовый класс
-- YandexGPTProvider: Интеграция с Yandex GPT
-- GigaChatProvider: Интеграция с GigaChat
-- ProviderFactory: Фабрика провайдеров
 
-#### 3.1.4. Сервисный слой
-- ChatService: Управление чатами и сообщениями
-- ContextService: Поиск и управление контекс��ом
-- DatabaseService: Работа с базой данных
-- EmbedApiClient: Взаимодействие с raggen-embed
-- ModelService: Управление моделями
-- PromptService: Форматирование промптов
-- ProviderService: Управление провайдерами
+##### BaseProvider
+- **Назначение**: Абстрактный класс для провайдеров LLM
+- **Интерфейс**:
+  ```typescript
+  interface GenerationOptions {
+    model?: string;
+    temperature?: number;
+    maxTokens?: number;
+  }
+  ```
 
-#### 3.1.5. База данных
-- **Prisma ORM**
-- **SQLite** для хранения данных
-- Схема данных:
-```prisma
-model Chat {
-  id        String    @id @default(uuid())
-  provider  String    
-  messages  Message[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-}
+##### Реализации провайдеров
+- **YandexGPTProvider**:
+  - Поддержка моделей YandexGPT
+  - Специфичные параметры генерации
+  - Обработка ошибок API
 
-model Message {
-  id          Int      @id @default(autoincrement())
-  chatId      String
-  message     String   
-  response    String?  
-  model       String   
-  provider    String   
-  timestamp   DateTime @default(now())
-  temperature Float    
-  maxTokens   Int      
-  embedding   Embedding?
-  usedContext Context[]
-}
+- **GigaChatProvider**:
+  - Интеграция с GigaChat API
+  - Управление токенами
+  - Специфичные промпты
 
-model Embedding {
-  id          Int      @id @default(autoincrement())
-  messageId   Int      @unique
-  vector      Bytes    
-  vectorId    Int      
-  createdAt   DateTime @default(now())
-}
+##### ProviderFactory
+- **Назначение**: Создание инстансов провайдеров
+- **Функциональность**:
+  - Динамическое создание провайдеров
+  - Конфигурация параметров
+  - Управление состоянием
 
-model Context {
-  id          Int      @id @default(autoincrement())
-  messageId   Int      
-  sourceId    Int      
-  score       Float    
-  usedInPrompt Boolean 
-  createdAt   DateTime @default(now())
-}
-```
+#### 3.1.4. API Routes
+
+##### /api/chat
+- **Метод**: POST
+- **Функциональность**:
+  - Обработка сообщений
+  - Интеграция с LLM
+  - Сохранение контекста
+- **Параметры**:
+  ```typescript
+  {
+    message: string;
+    provider: ProviderType;
+    options: {
+      model: string;
+      temperature: number;
+      maxTokens: number;
+      maxContextMessages: number;
+      contextScoreThreshold: number;
+    }
+  }
+  ```
+
+##### /api/messages
+- **Метод**: GET
+- **Функциональность**:
+  - История сообщений
+  - Фильтрация по чатам
+  - Пагинация
+
+##### /api/providers
+- **Метод**: GET
+- **Функциональность**:
+  - Список доступных провайдеров
+  - Статус провайдеров
+  - Конфигурация
+
+##### /api/models
+- **Метод**: GET
+- **Функциональность**:
+  - Доступные модели
+  - Параметры моделей
+  - Зависимость от провайдера
 
 ### 3.2. raggen-embed (Python)
 
@@ -231,7 +303,7 @@ model Context {
 2. ChatService обрабатывает запрос
 3. ContextService ищет релевантный контекст через raggen-embed
 4. PromptService формирует промпт с контекстом
-5. Провайдер LLM генерирует ответ
+5. Провайдер LLM генерирует о��вет
 6. Ответ сохраняется и отображается пользователю
 
 ### 4.2. Контекстный поиск
