@@ -118,15 +118,15 @@ cd /opt/raggen
 cp .env.example .env
 ./set-version.sh
 
-# Создание директорий
+# Создание директории для данных
 sudo mkdir -p /opt/raggen/data/faiss
 sudo chown -R $USER:$USER /opt/raggen/data
 
-# Конфигурация raggen-embed
-cp raggen-embed/.env.example raggen-embed/.env
+# Копирование и настройка .env для embed сервиса
+cp raggen-embed/.env.example /opt/raggen/raggen-embed/.env
 
 # Важно: настройте CORS для разрешения запросов от веб-сервера
-# Добавьте домен веб-сервера в CORS_ORIGINS
+# Добавьте домен веб-сервера в CORS_ORIGINS в /opt/raggen/raggen-embed/.env
 ```
 
 3. Настройка Nginx:
@@ -144,12 +144,29 @@ sudo nginx -t && sudo systemctl restart nginx
 ```
 
 4. Запуск сервиса:
+
+Через docker-compose:
 ```bash
 # Pull образа из registry
 docker-compose -f docker-compose.embed.yml pull
 
 # Запуск контейнера
 docker-compose -f docker-compose.embed.yml up -d
+```
+
+Или через docker run:
+```bash
+sudo docker run -d \
+  --name raggen-embed \
+  --restart unless-stopped \
+  -p 8001:8001 \
+  -v /opt/raggen/raggen-embed/.env:/app/.env \
+  -v /opt/raggen/data/faiss:/app/data/faiss \
+  -e HOST=0.0.0.0 \
+  -e PORT=8001 \
+  -e LOG_LEVEL=INFO \
+  -e CORS_ORIGINS='["http://web.your-domain.com"]' \
+  cr.yandex/${REGISTRY_ID}/raggen-embed:${VERSION}
 ```
 
 ## Проверка развертывания
@@ -212,8 +229,26 @@ docker run -d \
 cd /opt/raggen
 sudo git pull
 ./set-version.sh
+
+# При использовании docker-compose
 docker-compose -f docker-compose.embed.yml pull
 docker-compose -f docker-compose.embed.yml up -d
+
+# Или при использовании docker run
+docker pull cr.yandex/${REGISTRY_ID}/raggen-embed:${VERSION}
+docker stop raggen-embed
+docker rm raggen-embed
+docker run -d \
+  --name raggen-embed \
+  --restart unless-stopped \
+  -p 8001:8001 \
+  -v /opt/raggen/raggen-embed/.env:/app/.env \
+  -v /opt/raggen/data/faiss:/app/data/faiss \
+  -e HOST=0.0.0.0 \
+  -e PORT=8001 \
+  -e LOG_LEVEL=INFO \
+  -e CORS_ORIGINS='["http://web.your-domain.com"]' \
+  cr.yandex/${REGISTRY_ID}/raggen-embed:${VERSION}
 ```
 
 ## Важные замечания
