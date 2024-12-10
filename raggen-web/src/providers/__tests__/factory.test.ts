@@ -1,4 +1,5 @@
-import { ProviderFactory, ProviderType } from '../factory';
+import { ProviderFactory } from '../factory';
+import { ProviderType, PROVIDER_CONFIG } from '../../config/providers';
 import { YandexGPTProvider } from '../yandex/provider';
 import { GigaChatProvider } from '../gigachat/provider';
 
@@ -9,7 +10,7 @@ process.env.GIGACHAT_API_URL = 'https://gigachat.api';
 process.env.GIGACHAT_CREDENTIALS = 'gigachat-credentials';
 
 describe('ProviderFactory', () => {
-  const providers: ProviderType[] = ['yandex', 'gigachat'];
+  const providers = Object.keys(PROVIDER_CONFIG) as ProviderType[];
 
   test.each(providers)('should create %s provider', (type) => {
     const provider = ProviderFactory.createProvider(type);
@@ -28,7 +29,7 @@ describe('ProviderFactory', () => {
     expect(() => {
       // @ts-expect-error: Testing invalid provider type
       ProviderFactory.createProvider('unknown');
-    }).toThrow('Unknown provider type: unknown');
+    }).toThrow('Unknown provider: unknown');
   });
 
   test('providers should have required methods', () => {
@@ -48,13 +49,15 @@ describe('ProviderFactory', () => {
     // @ts-expect-error: Accessing protected property for testing
     expect(yandexProvider.config).toEqual({
       apiUrl: 'https://yandex.api',
-      credentials: 'yandex-key'
+      credentials: 'yandex-key',
+      systemPrompt: PROVIDER_CONFIG.yandex.systemPrompt
     });
 
     // @ts-expect-error: Accessing protected property for testing
     expect(gigachatProvider.config).toEqual({
       apiUrl: 'https://gigachat.api',
-      credentials: 'gigachat-credentials'
+      credentials: 'gigachat-credentials',
+      systemPrompt: PROVIDER_CONFIG.gigachat.systemPrompt
     });
   });
-}); 
+});
