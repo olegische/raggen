@@ -14,8 +14,6 @@ services:
       - HOST=0.0.0.0
       - PORT=8001
       - LOG_LEVEL=INFO
-      # В продакшене нужно настроить CORS для разрешения запросов от веб-сервера
-      - CORS_ORIGINS=["http://web.your-domain.com"]
     restart: unless-stopped
 
 volumes:
