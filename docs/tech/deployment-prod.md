@@ -261,6 +261,8 @@ docker run -d \
      ```bash
      # Проверка использования порта
      sudo netstat -tulpn | grep :8001
+     # Если занят nginx
+     sudo systemctl stop nginx
      # Освобождение порта от контейнера
      docker stop $(docker ps -q --filter "publish=8001")
      docker rm $(docker ps -aq --filter "publish=8001")
