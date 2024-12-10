@@ -1,4 +1,4 @@
-version: '3.8'
+version: '3.3'
 
 # Файл только для сборки образов
 # Параметры запуска (volumes, ports, restart) указываются в docker-compose.web.yml и docker-compose.embed.yml
