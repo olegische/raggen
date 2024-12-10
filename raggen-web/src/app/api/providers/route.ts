@@ -1,9 +1,10 @@
-import { ProviderService } from '@/services/provider.service';
+import { ProviderService } from '../../../services/provider.service';
+import { ProviderType } from '../../../config/providers';
 
 export async function GET() {
   try {
     const providers = await ProviderService.getAvailableProviders();
-    const providerStatuses = providers.map(provider => ({
+    const providerStatuses = providers.map((provider: ProviderType) => ({
       id: provider,
       status: ProviderService.getProviderStatus(provider)
     }));
@@ -17,4 +18,4 @@ export async function GET() {
       { status: 500 }
     );
   }
-} 
+}

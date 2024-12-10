@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
-import { ChatService } from '@/services/chat.service';
-import { ProviderService } from '@/services/provider.service';
-import { ProviderType } from '@/providers/factory';
+import { ChatService } from '../../../services/chat.service';
+import { ProviderService } from '../../../services/provider.service';
+import { ProviderType } from '../../../config/providers';
 
 export async function GET(request: NextRequest) {
   try {
@@ -37,4 +37,4 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export const dynamic = 'force-dynamic'; 
+export const dynamic = 'force-dynamic';

@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
-import { ModelService } from '@/services/model.service';
-import { ProviderType } from '@/providers/factory';
+import { ModelService } from '../../../services/model.service';
+import { ProviderType } from '../../../config/providers';
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,4 +21,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-} 
+}
