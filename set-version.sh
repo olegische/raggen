@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Get version from package.json
-WEB_VERSION=$(node -p "require('./raggen-web/package.json').version")
+# Get version from package.json using grep
+WEB_VERSION=$(grep '"version":' raggen-web/package.json | cut -d'"' -f4)
 
 # Get version from pyproject.toml
 EMBED_VERSION=$(grep "version = " raggen-embed/pyproject.toml | cut -d'"' -f2)
@@ -37,4 +37,4 @@ fi
 # Clean up
 rm "$tmp_file"
 
-echo "Version $WEB_VERSION has been set in .env" 
+echo "Version $WEB_VERSION has been set in .env"
