@@ -3,18 +3,11 @@ version: '3.8'
 services:
   raggen-web:
     image: cr.yandex/${REGISTRY_ID}/raggen-web:${VERSION}
-    build:
-      context: ./raggen-web
-      dockerfile: Dockerfile
-      platforms:
-        - linux/amd64
-      tags:
-        - cr.yandex/${REGISTRY_ID}/raggen-web:${VERSION}
-        - cr.yandex/${REGISTRY_ID}/raggen-web:latest
     ports:
       - "3000:3000"
     volumes:
-      - ./raggen-web/prisma/dev.db:/app/prisma/dev.db
+      # Используем единый путь для данных в /opt/raggen/data
+      - /opt/raggen/data/sqlite/dev.db:/app/prisma/dev.db
     environment:
       - DATABASE_URL=file:/app/prisma/dev.db
       # URL для продакшена должен указывать на внешний адрес сервиса эмбеддингов

@@ -3,18 +3,11 @@ version: '3.8'
 services:
   raggen-embed:
     image: cr.yandex/${REGISTRY_ID}/raggen-embed:${VERSION}
-    build:
-      context: ./raggen-embed
-      dockerfile: Dockerfile
-      platforms:
-        - linux/amd64
-      tags:
-        - cr.yandex/${REGISTRY_ID}/raggen-embed:${VERSION}
-        - cr.yandex/${REGISTRY_ID}/raggen-embed:latest
     ports:
       - "8001:8001"
     volumes:
-      - ./data/faiss:/app/data/faiss
+      # Используем абсолютный путь для FAISS индексов
+      - /opt/raggen/data/faiss:/app/data/faiss
     environment:
       - HOST=0.0.0.0
       - PORT=8001
