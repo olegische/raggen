@@ -92,8 +92,8 @@ class Settings(BaseSettings):
         default=5,
         description="Default number of results to return"
     )
-    index_path: str = Field(
-        default="data/faiss/index.faiss",
+    faiss_index_path: str = Field(
+        default="/app/data/faiss/index.faiss",
         description="Path to save/load FAISS index",
-        env="FAISS_INDEX_PATH"
+        env="FAISS_INDEX_PATH"  # Map to environment variable
     )
