@@ -10,8 +10,6 @@ services:
       - /opt/raggen/raggen-web/.env:/app/.env
       # Монтируем всю директорию prisma для сохранения миграций и схемы
       - /opt/raggen/data/sqlite/prisma:/app/prisma
-    environment:
-      - DATABASE_URL=file:/app/prisma/dev.db
     restart: unless-stopped
 
 volumes:
