@@ -2,203 +2,156 @@
 
 ## Общие принципы
 
-1. **Резервное копирование перед обновлением**:
-   - База данных SQLite
-   - Индексы FAISS
-   - Конфигурационные файлы
-   - Логи
+1. Каждый сервис можно откатить независимо
+2. Все образы тегируются версиями
+3. Данные каждого сервиса хранятся отдельно:
+   - Web: /opt/raggen/data/sqlite
+   - Embed: /opt/raggen/data/faiss
 
-2. **Версионирование**:
-   - Использование семантического версионирования
-   - Сохранение истории обновлений
-   - Документирование изменений в CHANGELOG.md
+## Подготовка к откату
 
-## Откат версии приложения
-
-### 1. Откат через Git
-
+1. Проверка доступных версий:
 ```bash
-# Проверка текущей версии
-git describe --tags
+# Проверка локальных образов
+docker images | grep raggen
 
-# Список доступных версий
-git tag -l
-
-# Откат к определенной версии
-git checkout v1.0.0
-
-# Обновление версии в конфигурации
-./set-version.sh
-
-# Пересборка и перезапуск
-docker-compose down
-docker-compose build
-docker-compose up -d
+# Проверка образов в registry
+yc container image list --repository-name raggen-web
+yc container image list --repository-name raggen-embed
 ```
 
-### 2. Откат через Docker
-
+2. Проверка резервных копий данных:
 ```bash
-# Список образов
-docker images
+# Для web сервиса
+ls -l /opt/raggen/backups/sqlite/
 
-# Откат к предыдущему образу
-docker-compose down
-docker tag cr.yandex/${REGISTRY_ID}/raggen-web:previous cr.yandex/${REGISTRY_ID}/raggen-web:latest
-docker tag cr.yandex/${REGISTRY_ID}/raggen-embed:previous cr.yandex/${REGISTRY_ID}/raggen-embed:latest
-docker-compose up -d
+# Для embed сервиса
+ls -l /opt/raggen/backups/faiss/
 ```
 
-## Откат базы данных
+## Откат Web сервиса (VM1)
 
-### 1. Восстановление SQLite
-
+1. Остановка текущей версии:
 ```bash
-# Остановка сервисов
-docker-compose down
+# При использовании docker-compose
+docker-compose -f docker-compose.web.yml down
 
-# Восстановление из бэкапа
-cp /backup/raggen/db/dev.db.backup raggen-web/prisma/dev.db
-
-# Запуск сервисов
-docker-compose up -d
+# Или при использовании docker run
+docker stop raggen-web
+docker rm raggen-web
 ```
 
-### 2. Откат миграций Prisma
-
+2. Восстановление данных (при необходимости):
 ```bash
-# Просмотр истории миграций
-npx prisma migrate status
+# Создание резервной копии текущих данных
+cp -r /opt/raggen/data/sqlite/prisma /opt/raggen/backups/sqlite/prisma_$(date +%Y%m%d_%H%M%S)
 
-# Откат к определенной миграции
-npx prisma migrate reset --to <migration_name>
-
-# Применение миграции
-npx prisma migrate deploy
+# Восстановление из резервной копии
+cp -r /opt/raggen/backups/sqlite/prisma_TIMESTAMP /opt/raggen/data/sqlite/prisma
 ```
 
-## Откат векторного хранилища
-
-### 1. Восстановление индексов FAISS
-
+3. Запуск предыдущей версии:
 ```bash
-# Остановка сервиса эмбеддингов
-docker-compose stop raggen-embed
+# Обновление версии в .env
+VERSION=X.Y.Z ./set-version.sh
 
-# Восстановление из бэкапа
-cp /backup/raggen/faiss/index.faiss.backup data/faiss/index.faiss
+# При использовании docker-compose
+docker-compose -f docker-compose.web.yml pull
+docker-compose -f docker-compose.web.yml up -d
 
-# Запуск сервиса
-docker-compose start raggen-embed
+# Или при использовании docker run
+docker run -d \
+  --name raggen-web \
+  --restart unless-stopped \
+  -p 3000:3000 \
+  -v /opt/raggen/raggen-web/.env:/app/.env \
+  -v /opt/raggen/data/sqlite/prisma:/app/prisma \
+  cr.yandex/${REGISTRY_ID}/raggen-web:X.Y.Z
 ```
 
-### 2. Пересоздание индексов
+## Откат Embed сервиса (VM2)
 
+1. Остановка текущей версии:
 ```bash
-# В случае повреждения индекса
-rm -f data/faiss/index.faiss
+# При использовании docker-compose
+docker-compose -f docker-compose.embed.yml down
 
-# Сервис автоматически создаст новый индекс при запуске
-docker-compose restart raggen-embed
+# Или при использовании docker run
+docker stop raggen-embed
+docker rm raggen-embed
 ```
 
-## Откат конфигурации
-
-### 1. Конфигурация приложения
-
+2. Восстановление данных (при необходимости):
 ```bash
-# Восстановление .env файлов
-cp /backup/raggen/.env.backup .env
-cp /backup/raggen/raggen-web/.env.backup raggen-web/.env
-cp /backup/raggen/raggen-embed/.env.backup raggen-embed/.env
+# Создание резервной копии текущих данных
+cp -r /opt/raggen/data/faiss /opt/raggen/backups/faiss_$(date +%Y%m%d_%H%M%S)
 
-# Перезапуск с новой конфигурацией
-docker-compose down
-docker-compose up -d
+# Восстановление из резервной копии
+cp -r /opt/raggen/backups/faiss_TIMESTAMP/* /opt/raggen/data/faiss/
 ```
 
-### 2. Конфигурация Nginx
-
+3. Запуск предыдущей версии:
 ```bash
-# Восстановление конфигурации
-sudo cp /backup/raggen/nginx/raggen.conf /etc/nginx/sites-available/raggen
+# Обновление версии в .env
+VERSION=X.Y.Z ./set-version.sh
 
-# Проверка конфигурации
-sudo nginx -t
+# При использовании docker-compose
+docker-compose -f docker-compose.embed.yml pull
+docker-compose -f docker-compose.embed.yml up -d
 
-# Применение изменений
-sudo systemctl restart nginx
+# Или при использовании docker run
+docker run -d \
+  --name raggen-embed \
+  --restart unless-stopped \
+  -p 8001:8001 \
+  -v /opt/raggen/raggen-embed/.env:/app/.env \
+  -v /opt/raggen/data/faiss:/app/data/faiss \
+  -e HOST=0.0.0.0 \
+  -e PORT=8001 \
+  -e LOG_LEVEL=INFO \
+  -e CORS_ORIGINS='["http://web.your-domain.com"]' \
+  cr.yandex/${REGISTRY_ID}/raggen-embed:X.Y.Z
 ```
 
 ## Проверка после отката
 
-### 1. Проверка сервисов
-
+### Web сервис:
 ```bash
-# Статус контейнеров
-docker-compose ps
+# Проверка статуса контейнера
+docker ps | grep raggen-web
+docker logs raggen-web
 
-# Проверка логов
-docker-compose logs
-
-# Проверка доступности API
-curl http://localhost:3000/health
-curl http://localhost:8001/health
+# Проверка доступности сервиса
+curl http://web.your-domain.com
 ```
 
-### 2. Проверка данных
-
+### Embed сервис:
 ```bash
-# Проверка базы данных
-npx prisma studio
+# Проверка статуса контейнера
+docker ps | grep raggen-embed
+docker logs raggen-embed
 
-# Проверка индексов FAISS
-curl -X POST http://localhost:8001/api/v1/search \
-  -H "Content-Type: application/json" \
-  -d '{"text": "test", "k": 1}'
+# Проверка доступности сервиса
+curl http://embed.your-domain.com:8001/docs
 ```
 
-## План отката для критических ситуаций
+## Важные замечания
 
-1. **Полный откат системы**:
-   ```bash
-   # Остановка всех сервисов
-   docker-compose down
-   
-   # Восстановление всех данных
-   ./scripts/restore-backup.sh <backup_date>
-   
-   # Запуск предыдущей версии
-   git checkout <previous_version>
-   docker-compose up -d
-   ```
+1. **Совместимость данных**:
+   - Убедитесь в совместимости схемы БД при откате web сервиса
+   - Проверьте совместимость FAISS индексов при откате embed сервиса
 
-2. **Быстрый откат с потерей данных**:
-   ```bash
-   # Только в крайнем случае
-   docker-compose down -v
-   git checkout <stable_version>
-   ./scripts/clean-install.sh
-   ```
+2. **Резервное копирование**:
+   - Всегда создавайте резервную копию текущих данных перед откатом
+   - Храните несколько последних резервных копий
+   - Регулярно проверяйте целостность резервных копий
 
-## Рекомендации
+3. **Мониторинг**:
+   - Внимательно следите за логами после отката
+   - Проверяйте метрики производительности
+   - Убедитесь в корректной работе всех функций
 
-1. **Перед обновлением**:
-   - Создать полный бэкап системы
-   - Проверить наличие места для отката
-   - Документировать текущую версию
-
-2. **Во время отката**:
-   - Следовать чек-листу отката
-   - Проверять каж��ый шаг
-   - Вести лог действий
-
-3. **После отката**:
-   - Проверить работоспособность
-   - Проанализировать причины отката
-   - Обновить документацию
-
-4. **Мониторинг**:
-   - Следить за логами
-   - Проверять метрики
-   - Тестировать основной функционал 
+4. **Документирование**:
+   - Записывайте причины отката
+   - Документируйте все проблемы, возникшие при откате
+   - Обновляйте процедуры отката на основе полученного опыта
