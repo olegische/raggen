@@ -1,11 +1,11 @@
-import { ProviderFactory, ProviderType } from '@/providers/factory';
-import { GenerationOptions } from '@/providers/base.provider';
-import { GENERATION_CONFIG } from '@/config/generation';
+import { GenerationOptions } from '../providers/base.provider';
+import { GENERATION_CONFIG } from '../config/generation';
 import { DatabaseService } from './database';
 import { ContextService } from './context.service';
 import { PromptService } from './prompt.service';
 import { EmbedApiClient } from './embed-api';
-import { SystemPromptType } from '@/config/prompts';
+import { ProviderFactory } from '../providers/factory';
+import { ProviderType, getProviderConfig } from '../config/providers';
 
 export interface SendMessageOptions extends GenerationOptions {
   maxContextMessages?: number;
@@ -17,12 +17,14 @@ export class ChatService {
   private database: DatabaseService;
   private contextService: ContextService;
   private promptService: PromptService;
+  private providerType: ProviderType;
 
   constructor(
     providerType: ProviderType,
     database?: DatabaseService,
     embedApi?: EmbedApiClient
   ) {
+    this.providerType = providerType;
     this.provider = ProviderFactory.createProvider(providerType);
     this.database = database || new DatabaseService();
     this.contextService = new ContextService(
@@ -42,7 +44,7 @@ export class ChatService {
       const chat = chatId 
         ? await this.database.getChat(chatId)
         : await this.database.createChat({
-            provider: this.provider.constructor.name.replace('Provider', '').toLowerCase()
+            provider: this.providerType
           });
 
       if (!chat) {
@@ -59,11 +61,14 @@ export class ChatService {
         excludeMessageIds: previousMessages.map(msg => msg.id)
       });
 
+      // Получаем конфигурацию провайдера
+      const providerConfig = getProviderConfig(this.providerType);
+
       // Форматируем промпт с контекстом
       const promptMessages = this.promptService.formatPromptWithContext(
         message,
         context,
-        this.provider.constructor.name.replace('Provider', '').toLowerCase() as SystemPromptType,
+        providerConfig.systemPrompt,
         {
           maxContextMessages: options?.maxContextMessages,
           contextScoreThreshold: options?.contextScoreThreshold
@@ -91,7 +96,7 @@ export class ChatService {
           message: message,
           response: response.text,
           model: options?.model || 'default',
-          provider: this.provider.constructor.name.replace('Provider', '').toLowerCase(),
+          provider: this.providerType,
           temperature: options?.temperature || GENERATION_CONFIG.temperature.default,
           maxTokens: options?.maxTokens || GENERATION_CONFIG.maxTokens.default
         },
@@ -121,4 +126,4 @@ export class ChatService {
   async getHistory(chatId: string) {
     return this.database.getMessagesByChat(chatId);
   }
-} 
+}
