@@ -1,0 +1,27 @@
+version: '3.8'
+
+# Файл только для сборки образов
+# Параметры запуска (volumes, ports, restart) указываются в docker-compose.web.yml и docker-compose.embed.yml
+
+services:
+  raggen-embed:
+    image: cr.yandex/${REGISTRY_ID}/raggen-embed:${VERSION}
+    build:
+      context: ./raggen-embed
+      dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+      tags:
+        - cr.yandex/${REGISTRY_ID}/raggen-embed:${VERSION}
+        - cr.yandex/${REGISTRY_ID}/raggen-embed:latest
+
+  raggen-web:
+    image: cr.yandex/${REGISTRY_ID}/raggen-web:${VERSION}
+    build:
+      context: ./raggen-web
+      dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+      tags:
+        - cr.yandex/${REGISTRY_ID}/raggen-web:${VERSION}
+        - cr.yandex/${REGISTRY_ID}/raggen-web:latest
