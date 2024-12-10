@@ -77,16 +77,26 @@ cp raggen-embed/.env.example raggen-embed/.env
 
 4. Настройка Nginx:
 ```bash
-# Копирование конфигурации
-sudo cp docs/tech/nginx.conf /etc/nginx/sites-available/raggen
+# Создание директорий для логов
+sudo mkdir -p /var/log/nginx
+sudo touch /var/log/nginx/embed-access.log /var/log/nginx/embed-error.log
+sudo chown -R www-data:www-data /var/log/nginx
 
-# Настройка домена
+# Копирование конфигураций
+sudo cp docs/tech/nginx-web.conf /etc/nginx/sites-available/raggen-web
+sudo cp docs/tech/nginx-embed.conf /etc/nginx/sites-available/raggen-embed
+
+# Настройка доменов
 # Замените actual-domain.com на ваш реальный домен
-sudo sed -i 's/your_domain.com/actual-domain.com/' /etc/nginx/sites-available/raggen
+sudo sed -i 's/your_domain.com/actual-domain.com/' /etc/nginx/sites-available/raggen-web
+sudo sed -i 's/your_domain.com/actual-domain.com/' /etc/nginx/sites-available/raggen-embed
 
-# Активация конфигурации
-sudo ln -sf /etc/nginx/sites-available/raggen /etc/nginx/sites-enabled/
-sudo rm /etc/nginx/sites-enabled/default
+# Активация конфигураций
+sudo ln -sf /etc/nginx/sites-available/raggen-web /etc/nginx/sites-enabled/
+sudo ln -sf /etc/nginx/sites-available/raggen-embed /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default
+
+# Проверка конфигурации и перезапуск
 sudo nginx -t && sudo systemctl restart nginx
 ```
 
@@ -139,7 +149,9 @@ sudo docker-compose up -d
 
 4. **Логи**:
    - Логи контейнеров: `docker-compose logs`
-   - Логи Nginx: `/var/log/nginx/raggen.{access,error}.log`
+   - Логи Nginx: 
+     - Веб-сервер: `/var/log/nginx/access.log`, `/var/log/nginx/error.log`
+     - Сервис эмбеддингов: `/var/log/nginx/embed-access.log`, `/var/log/nginx/embed-error.log`
 
 5. **Безопасность**:
    - Все API ключи хранятся в `.env` файлах
@@ -156,16 +168,22 @@ sudo docker-compose logs
 # Логи отдельных сервисов
 sudo docker-compose logs raggen-web
 sudo docker-compose logs raggen-embed
+
+# Логи Nginx
+sudo tail -f /var/log/nginx/error.log
+sudo tail -f /var/log/nginx/embed-error.log
 ```
 
 2. Проверка статуса сервисов:
 ```bash
 sudo docker-compose ps
+sudo systemctl status nginx
 ```
 
 3. Перезапуск сервисов:
 ```bash
 sudo docker-compose restart
+sudo systemctl restart nginx
 ```
 
 4. Полная пересборка:
@@ -173,4 +191,3 @@ sudo docker-compose restart
 sudo docker-compose down
 sudo docker-compose build --no-cache
 sudo docker-compose up -d
-``` 
