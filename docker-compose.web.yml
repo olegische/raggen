@@ -6,8 +6,10 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      # Используем единый путь для данных в /opt/raggen/data
-      - /opt/raggen/data/sqlite/dev.db:/app/prisma/dev.db
+      # Монтируем .env файл напрямую в контейнер
+      - /opt/raggen/raggen-web/.env:/app/.env
+      # Монтируем всю директорию prisma для сохранения миграций и схемы
+      - /opt/raggen/data/sqlite/prisma:/app/prisma
     environment:
       - DATABASE_URL=file:/app/prisma/dev.db
       # URL для продакшена должен указывать на внешний адрес сервиса эмбеддингов

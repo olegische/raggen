@@ -55,22 +55,20 @@ cd /opt/raggen
 cp .env.example .env
 ./set-version.sh
 
-# Конфигурация raggen-web
-cp raggen-web/.env.example raggen-web/.env
-# Настройте API ключи в raggen-web/.env
+# Создание директорий
+sudo mkdir -p /opt/raggen/raggen-web
+sudo mkdir -p /opt/raggen/data/sqlite/prisma
+sudo chown -R $USER:$USER /opt/raggen/raggen-web /opt/raggen/data
+
+# Копирование и настройка .env для web сервиса
+cp raggen-web/.env.example /opt/raggen/raggen-web/.env
+# Настройте API ключи в /opt/raggen/raggen-web/.env
 
 # Важно: укажите правильный URL для сервиса эмбеддингов
 # Измените значение NEXT_PUBLIC_EMBED_API_URL в .env
 ```
 
-3. Подготовка директорий:
-```bash
-# Создание директории для SQLite
-sudo mkdir -p /opt/raggen/data/sqlite
-sudo chown -R $USER:$USER /opt/raggen/data
-```
-
-4. Настройка Nginx:
+3. Настройка Nginx:
 ```bash
 # Копирование конфигурации
 sudo cp docs/tech/nginx-web.conf /etc/nginx/sites-available/raggen-web
@@ -84,13 +82,26 @@ sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl restart nginx
 ```
 
-5. Запуск сервиса:
+4. Запуск сервиса:
+
+Через docker-compose:
 ```bash
 # Pull образа из registry
 docker-compose -f docker-compose.web.yml pull
 
 # Запуск контейнера
 docker-compose -f docker-compose.web.yml up -d
+```
+
+Или через docker run:
+```bash
+sudo docker run -d \
+  --name raggen-web \
+  --restart unless-stopped \
+  -p 3000:3000 \
+  -v /opt/raggen/raggen-web/.env:/app/.env \
+  -v /opt/raggen/data/sqlite/prisma:/app/prisma \
+  cr.yandex/${REGISTRY_ID}/raggen-web:${VERSION}
 ```
 
 ## Развертывание raggen-embed (VM2)
@@ -107,6 +118,10 @@ cd /opt/raggen
 cp .env.example .env
 ./set-version.sh
 
+# Создание директорий
+sudo mkdir -p /opt/raggen/data/faiss
+sudo chown -R $USER:$USER /opt/raggen/data
+
 # Конфигурация raggen-embed
 cp raggen-embed/.env.example raggen-embed/.env
 
@@ -114,14 +129,7 @@ cp raggen-embed/.env.example raggen-embed/.env
 # Добавьте домен веб-сервера в CORS_ORIGINS
 ```
 
-3. Подготовка директорий:
-```bash
-# Создание директории для FAISS
-sudo mkdir -p /opt/raggen/data/faiss
-sudo chown -R $USER:$USER /opt/raggen/data
-```
-
-4. Настройка Nginx:
+3. Настройка Nginx:
 ```bash
 # Копирование конфигурации
 sudo cp docs/tech/nginx-embed.conf /etc/nginx/sites-available/raggen-embed
@@ -135,7 +143,7 @@ sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl restart nginx
 ```
 
-5. Запуск сервиса:
+4. Запуск сервиса:
 ```bash
 # Pull образа из registry
 docker-compose -f docker-compose.embed.yml pull
@@ -150,8 +158,8 @@ docker-compose -f docker-compose.embed.yml up -d
 
 1. Проверка статуса:
 ```bash
-docker-compose -f docker-compose.web.yml ps
-docker-compose -f docker-compose.web.yml logs
+docker ps | grep raggen-web
+docker logs raggen-web
 ```
 
 2. Проверка логов Nginx:
@@ -163,8 +171,8 @@ sudo tail -f /var/log/nginx/error.log
 
 1. Проверка статуса:
 ```bash
-docker-compose -f docker-compose.embed.yml ps
-docker-compose -f docker-compose.embed.yml logs
+docker ps | grep raggen-embed
+docker logs raggen-embed
 ```
 
 2. Проверка логов Nginx:
@@ -180,8 +188,22 @@ sudo tail -f /var/log/nginx/embed-error.log
 cd /opt/raggen
 sudo git pull
 ./set-version.sh
+
+# При использовании docker-compose
 docker-compose -f docker-compose.web.yml pull
 docker-compose -f docker-compose.web.yml up -d
+
+# Или при использовании docker run
+docker pull cr.yandex/${REGISTRY_ID}/raggen-web:${VERSION}
+docker stop raggen-web
+docker rm raggen-web
+docker run -d \
+  --name raggen-web \
+  --restart unless-stopped \
+  -p 3000:3000 \
+  -v /opt/raggen/raggen-web/.env:/app/.env \
+  -v /opt/raggen/data/sqlite/prisma:/app/prisma \
+  cr.yandex/${REGISTRY_ID}/raggen-web:${VERSION}
 ```
 
 ### На VM2 (raggen-embed):
