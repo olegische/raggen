@@ -1,6 +1,6 @@
 'use client';
 
-import { ProviderType } from '@/providers/factory';
+import { ProviderType } from '../config/providers';
 import ProviderSelector from './ProviderSelector';
 import ModelSelector from './ModelSelector';
 import ThemeToggle from './ThemeToggle';
@@ -45,4 +45,4 @@ export default function Header({
       </div>
     </header>
   );
-} 
+}

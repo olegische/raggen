@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ProviderType } from '@/providers/factory';
+import { ProviderType } from '../config/providers';
 
 interface ModelSelectorProps {
   selectedModel: string;
@@ -69,4 +69,4 @@ export default function ModelSelector({
       </select>
     </div>
   );
-} 
+}

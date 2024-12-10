@@ -4,9 +4,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Message } from '@prisma/client';
-import { ProviderType } from '@/providers/factory';
-import { getProviderDisplayName, PROVIDER_CONFIG } from '@/config/providers';
-import { ContextSearchResult } from '@/services/context.service';
+import { ProviderType, getProviderDisplayName, PROVIDER_CONFIG } from '../config/providers';
+import { ContextSearchResult } from '../services/context.service';
 import ContextIndicator from './ContextIndicator';
 import ContextSettings from './ContextSettings';
 
@@ -296,4 +295,4 @@ export default function ChatWindow({
       </div>
     </div>
   );
-} 
+}

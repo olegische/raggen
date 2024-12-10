@@ -1,8 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ProviderType } from '@/providers/factory';
-import { getProviderDisplayName } from '@/config/providers';
+import { ProviderType, getProviderDisplayName } from '../config/providers';
 
 interface ProviderSelectorProps {
   selectedProvider: ProviderType;
@@ -76,4 +75,4 @@ export default function ProviderSelector({
       </select>
     </div>
   );
-} 
+}
