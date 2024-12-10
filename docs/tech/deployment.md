@@ -77,33 +77,14 @@ cp raggen-embed/.env.example raggen-embed/.env
 
 4. Настройка Nginx:
 ```bash
-sudo tee /etc/nginx/sites-available/raggen << 'EOF'
-server {
-    listen 80;
-    server_name your_domain.com;  # Замените на ваш домен
+# Копирование конфигурации
+sudo cp docs/tech/nginx.conf /etc/nginx/sites-available/raggen
 
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-    }
+# Настройка домена
+# Замените actual-domain.com на ваш реальный домен
+sudo sed -i 's/your_domain.com/actual-domain.com/' /etc/nginx/sites-available/raggen
 
-    location /api/embed/ {
-        proxy_pass http://localhost:8001;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-    }
-
-    # Логирование
-    access_log /var/log/nginx/raggen.access.log;
-    error_log /var/log/nginx/raggen.error.log;
-}
-EOF
-
+# Активация конфигурации
 sudo ln -sf /etc/nginx/sites-available/raggen /etc/nginx/sites-enabled/
 sudo rm /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl restart nginx
