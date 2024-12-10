@@ -1,13 +1,23 @@
-import { ProviderType } from '@/providers/factory';
+import { SystemPromptType } from './prompts';
 
-export const PROVIDER_CONFIG = {
+export type ProviderType = 'yandex' | 'gigachat';
+
+export interface ProviderConfig {
+  id: ProviderType;
+  displayName: string;
+  systemPrompt: SystemPromptType;
+}
+
+export const PROVIDER_CONFIG: Record<ProviderType, ProviderConfig> = {
   yandex: {
-    id: 'yandex' as ProviderType,
-    displayName: 'Yandex'
+    id: 'yandex',
+    displayName: 'YandexGPT',
+    systemPrompt: 'yandex'
   },
   gigachat: {
-    id: 'gigachat' as ProviderType,
-    displayName: 'GigaChat'
+    id: 'gigachat',
+    displayName: 'GigaChat',
+    systemPrompt: 'gigachat'
   }
 } as const;
 
@@ -17,4 +27,12 @@ export function getProviderDisplayName(providerId: ProviderType): string {
     return String(providerId || 'Unknown');
   }
   return PROVIDER_CONFIG[providerId].displayName;
-} 
+}
+
+export function getProviderConfig(providerId: ProviderType): ProviderConfig {
+  const config = PROVIDER_CONFIG[providerId];
+  if (!config) {
+    throw new Error(`Unknown provider: ${providerId}`);
+  }
+  return config;
+}

@@ -1,4 +1,5 @@
-import { ProviderFactory, ProviderType } from '@/providers/factory';
+import { ProviderFactory } from '../providers/factory';
+import { ProviderType, PROVIDER_CONFIG } from '../config/providers';
 
 interface ProviderStatus {
   available: boolean;
@@ -11,7 +12,7 @@ export class ProviderService {
   private static checkInterval = 60 * 1000; // 1 минута
 
   static async getAvailableProviders(): Promise<ProviderType[]> {
-    const providers: ProviderType[] = ['yandex', 'gigachat'];
+    const providers = Object.keys(PROVIDER_CONFIG) as ProviderType[];
     const available: ProviderType[] = [];
 
     for (const provider of providers) {
@@ -76,4 +77,4 @@ export class ProviderService {
       this.statusCache.clear();
     }
   }
-} 
+}
