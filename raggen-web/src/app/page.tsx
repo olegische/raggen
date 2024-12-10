@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { Message } from '@prisma/client';
-import { ProviderType } from '@/providers/factory';
-import { GENERATION_CONFIG } from '@/config/generation';
-import Header from '@/components/Header';
-import ChatWindow from '@/components/ChatWindow';
-import Footer from '@/components/Footer';
+import { ProviderType } from '../config/providers';
+import { GENERATION_CONFIG } from '../config/generation';
+import Header from '../components/Header';
+import ChatWindow from '../components/ChatWindow';
+import Footer from '../components/Footer';
 
 interface GenerationSettings {
   temperature: number;
