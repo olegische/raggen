@@ -1,5 +1,13 @@
 # Развертывание RAGGEN в Production
 
+## Предварительные требования
+
+1. Образы должны быть собраны и опубликованы в registry из тестовой среды:
+   - cr.yandex/${REGISTRY_ID}/raggen-web:${VERSION}
+   - cr.yandex/${REGISTRY_ID}/raggen-embed:${VERSION}
+   
+См. [Инструкции по сборке](deployment-test.md) для деталей.
+
 ## Архитектура развертывания
 
 В production среде сервисы развертываются на отдельных виртуальных машинах:
@@ -19,6 +27,18 @@ sudo apt-get update && sudo apt-get install -y \
     fail2ban \
     vim \
     curl
+```
+
+## Настройка доступа к registry
+
+На каждой машине настройте доступ к container registry:
+
+```bash
+# Для Yandex Container Registry
+yc container registry configure-docker
+
+# Или используя docker login
+docker login cr.yandex
 ```
 
 ## Развертывание raggen-web (VM1)
@@ -43,7 +63,14 @@ cp raggen-web/.env.example raggen-web/.env
 # Измените значение NEXT_PUBLIC_EMBED_API_URL в .env
 ```
 
-3. Настройка Nginx:
+3. Подготовка директорий:
+```bash
+# Создание директории для SQLite
+sudo mkdir -p /opt/raggen/data/sqlite
+sudo chown -R $USER:$USER /opt/raggen/data
+```
+
+4. Настройка Nginx:
 ```bash
 # Копирование конфигурации
 sudo cp docs/tech/nginx-web.conf /etc/nginx/sites-available/raggen-web
@@ -57,11 +84,10 @@ sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl restart nginx
 ```
 
-4. Запуск сервиса:
+5. Запуск сервиса:
 ```bash
-# Создание директории для SQLite
-sudo mkdir -p /opt/raggen/raggen-web/prisma
-sudo chown -R $USER:$USER /opt/raggen/raggen-web/prisma
+# Pull образа из registry
+docker-compose -f docker-compose.web.yml pull
 
 # Запуск контейнера
 docker-compose -f docker-compose.web.yml up -d
@@ -88,7 +114,14 @@ cp raggen-embed/.env.example raggen-embed/.env
 # Добавьте домен веб-сервера в CORS_ORIGINS
 ```
 
-3. Настройка Nginx:
+3. Подготовка директорий:
+```bash
+# Создание директории для FAISS
+sudo mkdir -p /opt/raggen/data/faiss
+sudo chown -R $USER:$USER /opt/raggen/data
+```
+
+4. Настройка Nginx:
 ```bash
 # Копирование конфигурации
 sudo cp docs/tech/nginx-embed.conf /etc/nginx/sites-available/raggen-embed
@@ -102,11 +135,10 @@ sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl restart nginx
 ```
 
-4. Запуск сервиса:
+5. Запуск сервиса:
 ```bash
-# Создание директории для FAISS
-sudo mkdir -p /opt/raggen/data/faiss
-sudo chown -R $USER:$USER /opt/raggen/data/faiss
+# Pull образа из registry
+docker-compose -f docker-compose.embed.yml pull
 
 # Запуск контейнера
 docker-compose -f docker-compose.embed.yml up -d
@@ -148,7 +180,7 @@ sudo tail -f /var/log/nginx/embed-error.log
 cd /opt/raggen
 sudo git pull
 ./set-version.sh
-docker-compose -f docker-compose.web.yml build
+docker-compose -f docker-compose.web.yml pull
 docker-compose -f docker-compose.web.yml up -d
 ```
 
@@ -158,7 +190,7 @@ docker-compose -f docker-compose.web.yml up -d
 cd /opt/raggen
 sudo git pull
 ./set-version.sh
-docker-compose -f docker-compose.embed.yml build
+docker-compose -f docker-compose.embed.yml pull
 docker-compose -f docker-compose.embed.yml up -d
 ```
 
@@ -189,3 +221,8 @@ docker-compose -f docker-compose.embed.yml up -d
    - Настройте fail2ban на обоих серверах
    - Регулярно обновляйте системные пакеты
    - Используйте сильные пароли и SSH-ключи
+
+6. **Container Registry**:
+   - Убедитесь в актуальности учетных данных для registry
+   - Регулярно обновляйте токены доступа
+   - Проверяйте права доступа к registry

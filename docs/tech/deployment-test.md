@@ -1,4 +1,4 @@
-# Сборка и тестирование RAGGEN
+# Сборка и тестирование RAGGEN в тестовой среде
 
 ## Подготовка тестовой среды
 
@@ -24,7 +24,7 @@ cp .env.example .env
 # Настройте REGISTRY_ID для вашего registry в Yandex Cloud
 ```
 
-## Сборка образов
+## Сборка образов для production
 
 1. Сборка всех образов:
 ```bash
@@ -40,32 +40,7 @@ docker-compose -f docker-compose.build.yml build
 docker images | grep raggen
 ```
 
-## Тестирование в локальной среде
-
-1. Запуск сервисов для тестирования:
-```bash
-# Создание необходимых директорий
-mkdir -p data/faiss raggen-web/prisma
-touch raggen-web/prisma/dev.db
-
-# Запуск с использованием тестового docker-compose
-docker-compose up -d
-```
-
-2. Проверка работоспособности:
-```bash
-# Проверка статуса контейнеров
-docker-compose ps
-
-# Проверка логов
-docker-compose logs
-
-# Проверка доступности сервисов
-curl http://localhost:3000/
-curl http://localhost:8001/docs
-```
-
-## Публикация образов
+## Публикация образов в registry
 
 1. Аутентификация в registry:
 ```bash
@@ -91,7 +66,14 @@ yc container image list --repository-name raggen-embed
 
 ## Тестирование production конфигурации
 
-1. Тестирование web сервиса:
+1. Создание директорий для данных:
+```bash
+# Создание структуры как в production
+sudo mkdir -p /opt/raggen/data/{faiss,sqlite}
+sudo chown -R $USER:$USER /opt/raggen/data
+```
+
+2. Тестирование web сервиса:
 ```bash
 # Pull и запуск web сервиса
 docker-compose -f docker-compose.web.yml pull
@@ -102,7 +84,7 @@ docker-compose -f docker-compose.web.yml ps
 docker-compose -f docker-compose.web.yml logs
 ```
 
-2. Тестирование embed сервиса:
+3. Тестирование embed сервиса:
 ```bash
 # Pull и запуск embed сервиса
 docker-compose -f docker-compose.embed.yml pull
@@ -118,7 +100,6 @@ docker-compose -f docker-compose.embed.yml logs
 1. Остановка контейнеров:
 ```bash
 # Остановка всех сервисов
-docker-compose down
 docker-compose -f docker-compose.web.yml down
 docker-compose -f docker-compose.embed.yml down
 ```
@@ -126,7 +107,7 @@ docker-compose -f docker-compose.embed.yml down
 2. Очистка данных (опционально):
 ```bash
 # Удаление тестовых данных
-rm -rf data/faiss/* raggen-web/prisma/dev.db
+sudo rm -rf /opt/raggen/data/faiss/* /opt/raggen/data/sqlite/*
 ```
 
 3. Очистка образов (опционально):
@@ -137,35 +118,33 @@ docker image prune -a
 
 ## Важные замечания
 
-1. **Версионирование**:
-   - Убедитесь, что версии в package.json и pyproject.toml совпадают
-   - Используйте set-version.sh для синхронизации версий
-   - Проверяйте версии в тегах образов
+1. **Ресурсы**:
+   - Убедитесь, что в тестовой среде достаточно CPU и RAM для сборки
+   - Для Node.js сборки нужно минимум 2GB RAM
+   - Для Python зависимостей нужно минимум 2GB RAM
 
-2. **Тестирование**:
-   - Проверьте все основные функции перед публикацией
-   - Протестируйте взаимодействие между сервисами
-   - Проверьте работу с разными провайдерами LLM
-   - Убедитесь в корректности настроек CORS
-
-3. **Registry**:
+2. **Registry**:
    - Проверьте права доступа к registry
    - Убедитесь в корректности REGISTRY_ID
    - Проверьте доступность образов после публикации
 
-4. **Данные**:
-   - Проверьте корректность монтирования volumes
-   - Убедитесь в правильности прав доступа
-   - Проверьте работу с FAISS индексами
-   - Протестируйте работу с SQLite базой
+3. **Версионирование**:
+   - Используйте set-version.sh для синхронизации версий
+   - Проверяйте версии в тегах образов
+   - Убедитесь, что все сервисы используют одинаковую версию
 
-5. **Логи**:
-   - Проверьте уровни логирования
-   - Убедитесь в корректности форматирования логов
-   - Проверьте ротацию логов
+4. **Тестирование**:
+   - Проверьте все основные функции
+   - Протестируйте взаимодействие между сервисами
+   - Убедитесь в корректности настроек CORS
+   - Проверьте работу с данными (FAISS, SQLite)
 
-6. **Безопасность**:
+5. **Безопасность**:
+   - Не храните чувствительные данные в образах
    - Проверьте настройки CORS
    - Убедитесь в безопасности API endpoints
-   - Проверьте обработку ошибок
-   - Протестируйте механизмы аутентификации
+
+6. **Документирование**:
+   - Записывайте версии успешно собранных образов
+   - Документируйте любые специфические настройки
+   - Сохраняйте логи сборки для отладки
