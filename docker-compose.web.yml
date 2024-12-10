@@ -12,8 +12,6 @@ services:
       - /opt/raggen/data/sqlite/prisma:/app/prisma
     environment:
       - DATABASE_URL=file:/app/prisma/dev.db
-      # URL для продакшена должен указывать на внешний адрес сервиса эмбеддингов
-      - NEXT_PUBLIC_EMBED_API_URL=http://embed.your-domain.com:8001
     restart: unless-stopped
 
 volumes:
