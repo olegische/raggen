@@ -1,12 +1,12 @@
 import { BaseProvider } from './base.provider';
 import { YandexGPTProvider } from './yandex/provider';
 import { GigaChatProvider } from './gigachat/provider';
-
-export type ProviderType = 'yandex' | 'gigachat';
+import { ProviderType, getProviderConfig } from '../config/providers';
 
 export class ProviderFactory {
   static createProvider(type: ProviderType): BaseProvider {
     console.log(`Creating provider for type: ${type}`);
+    const config = getProviderConfig(type);
     
     switch (type) {
       case 'yandex':
@@ -16,7 +16,7 @@ export class ProviderFactory {
         return new YandexGPTProvider({
           apiUrl: yandexUrl,
           credentials: yandexKey,
-          systemPrompt: 'yandex'
+          systemPrompt: config.systemPrompt
         });
       case 'gigachat':
         console.log('Creating GigaChat provider with URL:', process.env.GIGACHAT_API_URL);
@@ -32,10 +32,10 @@ export class ProviderFactory {
         return new GigaChatProvider({
           apiUrl: gigachatUrl,
           credentials: gigachatCreds,
-          systemPrompt: 'gigachat'
+          systemPrompt: config.systemPrompt
         });
       default:
         throw new Error(`Unknown provider type: ${type}`);
     }
   }
-} 
+}
