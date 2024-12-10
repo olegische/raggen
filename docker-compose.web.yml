@@ -8,8 +8,9 @@ services:
     volumes:
       # Монтируем .env файл напрямую в контейнер
       - /opt/raggen/raggen-web/.env:/app/.env
-      # Монтируем всю директорию prisma для сохранения миграций и схемы
-      - /opt/raggen/data/sqlite/prisma:/app/prisma
+      # Монтируем schema.prisma и директорию для БД
+      - ./raggen-web/prisma/schema.prisma:/app/prisma/schema.prisma:ro
+      - /opt/raggen/data/sqlite:/app/prisma
     restart: unless-stopped
 
 volumes:
