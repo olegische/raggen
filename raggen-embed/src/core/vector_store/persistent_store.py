@@ -23,8 +23,8 @@ class PersistentFAISSStore:
             auto_save: Whether to automatically save after modifications
             index_path: Path to the index file (default: from settings)
         """
-        self.store_dir = os.path.dirname(index_path or settings.index_path)
-        self.index_path = index_path or settings.index_path
+        self.store_dir = os.path.dirname(index_path or settings.faiss_index_path)
+        self.index_path = index_path or settings.faiss_index_path
         self.auto_save = auto_save
         
         # Create directory if it doesn't exist
@@ -125,4 +125,4 @@ class PersistentFAISSStore:
     
     def __len__(self) -> int:
         """Get number of vectors in the store."""
-        return len(self.store) 
+        return len(self.store)
