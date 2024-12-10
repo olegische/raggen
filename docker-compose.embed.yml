@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  raggen-embed:
+    image: cr.yandex/${REGISTRY_ID}/raggen-embed:${VERSION}
+    build:
+      context: ./raggen-embed
+      dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+      tags:
+        - cr.yandex/${REGISTRY_ID}/raggen-embed:${VERSION}
+        - cr.yandex/${REGISTRY_ID}/raggen-embed:latest
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./data/faiss:/app/data/faiss
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8001
+      - LOG_LEVEL=INFO
+      # В продакшене нужно настроить CORS для разрешения запросов от веб-сервера
+      - CORS_ORIGINS=["http://web.your-domain.com"]
+    restart: unless-stopped
+
+volumes:
+  faiss-data:
+    driver: local
