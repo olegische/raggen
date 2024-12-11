@@ -1,89 +1,67 @@
 import { PrismaClient, Chat, Message } from '@prisma/client';
 import { BaseRepository } from './base.repository';
+import { MessageRepository, CreateMessageParams } from './message.repository';
+import { EmbeddingRepository, CreateEmbeddingParams, CreateContextParams } from './embedding.repository';
 
 export interface CreateChatParams {
   provider: string;
 }
 
-export interface CreateMessageParams {
-  chatId: string;
-  message: string;
-  model: string;
-  provider: string;
-  temperature: number;
-  maxTokens: number;
-  response?: string | null;
-}
-
 export class ChatRepository extends BaseRepository {
+  private messageRepository: MessageRepository;
+  private embeddingRepository: EmbeddingRepository;
+
   constructor(prisma: PrismaClient) {
     super(prisma);
+    this.messageRepository = new MessageRepository(prisma);
+    this.embeddingRepository = new EmbeddingRepository(prisma);
   }
 
   // Chat operations
   async createChat(params: CreateChatParams): Promise<Chat> {
-    return this.prisma.chat.create({
-      data: params
-    });
+    try {
+      if (!params.provider || params.provider.trim().length === 0) {
+        throw new Error('Provider is required');
+      }
+
+      return await this.prisma.chat.create({
+        data: params
+      });
+    } catch (error) {
+      console.error('Error creating chat:', error);
+      throw error instanceof Error ? error : new Error('Failed to create chat');
+    }
   }
 
   async getChat(id: string): Promise<Chat | null> {
-    return this.prisma.chat.findUnique({
-      where: { id }
-    });
+    try {
+      if (!id || id.trim().length === 0) {
+        throw new Error('Chat ID is required');
+      }
+
+      return await this.prisma.chat.findUnique({
+        where: { id }
+      });
+    } catch (error) {
+      console.error('Error getting chat:', error);
+      throw error instanceof Error ? error : new Error('Failed to get chat');
+    }
   }
 
   async getChatsByProvider(provider: string): Promise<Chat[]> {
-    return this.prisma.chat.findMany({
-      where: { provider },
-      orderBy: { createdAt: 'desc' }
-    });
-  }
-
-  // Message operations
-  async createMessage(params: CreateMessageParams): Promise<Message> {
-    return this.prisma.message.create({
-      data: params
-    });
-  }
-
-  async getMessage(id: number): Promise<Message | null> {
-    return this.prisma.message.findUnique({
-      where: { id },
-      include: {
-        embedding: true,
-        usedContext: true
+    try {
+      if (!provider || provider.trim().length === 0) {
+        throw new Error('Provider is required');
       }
-    });
-  }
 
-  async getMessagesByChat(chatId: string): Promise<Message[]> {
-    return this.prisma.message.findMany({
-      where: { chatId },
-      include: {
-        embedding: true,
-        usedContext: true
-      },
-      orderBy: { timestamp: 'asc' }
-    });
-  }
-
-  async getMessagesByIds(ids: number[]): Promise<Message[]> {
-    return this.prisma.message.findMany({
-      where: {
-        id: {
-          in: ids
-        }
-      }
-    });
-  }
-
-  async getMessagesWithoutEmbeddings(): Promise<Message[]> {
-    return this.prisma.message.findMany({
-      where: {
-        embedding: null
-      }
-    });
+      return await this.prisma.chat.findMany({
+        where: { provider },
+        orderBy: { createdAt: 'desc' }
+      });
+    } catch (error) {
+      console.error('Error getting chats by provider:', error);
+      throw error instanceof Error ? error : new Error('Failed to get chats');
+    }
   }
 
   // Transaction operations
@@ -94,7 +72,11 @@ export class ChatRepository extends BaseRepository {
     return this.prisma.$transaction(async (tx) => {
       // Создаем сообщение
       const message = await tx.message.create({
-        data: messageParams
+        data: messageParams,
+        include: {
+          embedding: true,
+          usedContext: true
+        }
       });
 
       // Создаем эмбеддинг
@@ -106,7 +88,14 @@ export class ChatRepository extends BaseRepository {
         }
       });
 
-      return message;
+      // Возвращаем сообщение с обновленными связями
+      return tx.message.findUnique({
+        where: { id: message.id },
+        include: {
+          embedding: true,
+          usedContext: true
+        }
+      }) as Promise<Message>;
     });
   }
 
@@ -118,7 +107,11 @@ export class ChatRepository extends BaseRepository {
     return this.prisma.$transaction(async (tx) => {
       // Создаем сообщение
       const message = await tx.message.create({
-        data: messageParams
+        data: messageParams,
+        include: {
+          embedding: true,
+          usedContext: true
+        }
       });
 
       // Создаем эмбеддинг
@@ -142,7 +135,14 @@ export class ChatRepository extends BaseRepository {
         });
       }
 
-      return message;
+      // Возвращаем сообщение с обновленными связями
+      return tx.message.findUnique({
+        where: { id: message.id },
+        include: {
+          embedding: true,
+          usedContext: true
+        }
+      }) as Promise<Message>;
     });
   }
 }
