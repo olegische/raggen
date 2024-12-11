@@ -1,5 +1,10 @@
 import '@testing-library/jest-dom';
 
+// Add TextEncoder/TextDecoder polyfills for JSDOM
+const { TextEncoder, TextDecoder } = require('util');
+global.TextEncoder = TextEncoder;
+global.TextDecoder = TextDecoder;
+
 jest.mock('next-themes', () => ({
   useTheme: () => ({
     theme: 'light',
@@ -17,4 +22,4 @@ jest.mock('next/navigation', () => ({
   useSearchParams: () => ({
     get: jest.fn(),
   }),
-})); 
+}));
