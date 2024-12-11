@@ -12,3 +12,6 @@ isort==5.13.2
 mypy==1.8.0
 pytest-cov==4.1.0
 pydantic-settings==2.1.0
+python-multipart==0.0.7
+beautifulsoup4==4.12.3
+markdown==3.5.2

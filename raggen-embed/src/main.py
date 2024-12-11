@@ -10,6 +10,7 @@ import uuid
 
 from config.settings import Settings
 from api.embeddings import router as embeddings_router
+from api.documents import router as documents_router
 from utils.logging import get_logger
 
 settings = Settings()
@@ -18,15 +19,16 @@ logger = get_logger(__name__)
 app = FastAPI(
     title=settings.api_title,
     description="""
-    # Text Embedding API
+    # Text Embedding and Document Processing API
 
-    This API provides endpoints for text vectorization and similarity search.
+    This API provides endpoints for text vectorization, document processing, and similarity search.
     
     ## Features
     
     - Generate embeddings for single texts
     - Generate embeddings for multiple texts in batch
     - Search for similar texts using vector similarity
+    - Process and analyze documents (TXT, MD, HTML)
     
     ## Authentication
     
@@ -37,6 +39,7 @@ app = FastAPI(
     - Single text embedding: No limit
     - Batch text embedding: Maximum 32 texts per request
     - Similarity search: Maximum 100 results per query
+    - Document upload: Maximum 10MB per file
     
     ## Text Limits
     
@@ -50,6 +53,13 @@ app = FastAPI(
     - Index type: IVF Flat
     - Number of clusters: Configurable
     - Number of probes: Configurable
+    
+    ## Document Processing
+    
+    Supported document types:
+    - Plain text (.txt)
+    - Markdown (.md)
+    - HTML (.html)
     """,
     version=settings.api_version,
     docs_url=None,  # Disable default docs
@@ -93,6 +103,7 @@ async def add_request_id(request: Request, call_next):
 
 # Include routers
 app.include_router(embeddings_router, prefix="/api/v1", tags=["embeddings"])
+app.include_router(documents_router, prefix="/api/v1", tags=["documents"])
 
 def custom_openapi():
     """Generate custom OpenAPI schema."""
@@ -165,4 +176,4 @@ async def redoc_html():
 async def health_check():
     """Health check endpoint."""
     logger.debug("Health check requested")
-    return {"status": "ok"} 
+    return {"status": "ok"}
