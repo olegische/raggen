@@ -1,5 +1,4 @@
-import { ProviderFactory } from '../providers/factory';
-import { ProviderType, PROVIDER_CONFIG } from '../config/providers';
+import { ProviderFactory, ProviderType } from '../providers/factory';
 
 interface ProviderStatus {
   available: boolean;
@@ -11,21 +10,22 @@ export class ProviderService {
   private static statusCache: Map<ProviderType, ProviderStatus> = new Map();
   private static checkInterval = 60 * 1000; // 1 минута
 
-  static async getAvailableProviders(): Promise<ProviderType[]> {
-    const providers = Object.keys(PROVIDER_CONFIG) as ProviderType[];
-    const available: ProviderType[] = [];
+  static async getAvailableProviders(): Promise<{ id: ProviderType; status: ProviderStatus }[]> {
+    const providers = ProviderFactory.getSupportedProviders();
+    const result = [];
 
     for (const provider of providers) {
-      console.log(`Checking availability of provider: ${provider}`);
-      const isAvailable = await this.isProviderAvailable(provider);
-      console.log(`Provider ${provider} availability:`, isAvailable);
-      if (isAvailable) {
-        available.push(provider);
+      console.log(`Checking availability of provider: ${provider.id}`);
+      const isAvailable = await this.isProviderAvailable(provider.id);
+      console.log(`Provider ${provider.id} availability:`, isAvailable);
+      const status = this.getProviderStatus(provider.id);
+      if (status) {
+        result.push({ id: provider.id, status });
       }
     }
 
-    console.log('Available providers:', available);
-    return available;
+    console.log('Available providers:', result);
+    return result;
   }
 
   static async isProviderAvailable(type: ProviderType): Promise<boolean> {
@@ -40,7 +40,7 @@ export class ProviderService {
 
     try {
       console.log(`Creating provider instance for ${type}`);
-      const provider = ProviderFactory.createProvider(type);
+      const provider = ProviderFactory.getProvider(type);
       console.log(`Listing models for ${type}`);
       await provider.listModels();
 
