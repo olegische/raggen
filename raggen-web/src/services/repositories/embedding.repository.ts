@@ -93,7 +93,10 @@ export class EmbeddingRepository extends BaseRepository {
         }
       });
 
-      return embeddings;
+      // Filter out any embeddings with null messages
+      return embeddings.filter((embedding): embedding is EmbeddingWithMessage => 
+        embedding.message !== null
+      );
     } catch (error) {
       console.error('Error getting embeddings by vector IDs:', error);
       throw error instanceof Error ? error : new Error('Failed to get embeddings');
@@ -169,13 +172,18 @@ export class EmbeddingRepository extends BaseRepository {
         return [];
       }
 
-      return await this.prisma.context.findMany({
+      const contexts = await this.prisma.context.findMany({
         where: { messageId },
         include: {
           message: true
         },
         orderBy: { score: 'desc' }
       });
+
+      // Filter out any contexts with null messages
+      return contexts.filter((context): context is ContextWithMessage => 
+        context.message !== null
+      );
     } catch (error) {
       console.error('Error getting context by message ID:', error);
       throw error instanceof Error ? error : new Error('Failed to get context');

@@ -6,6 +6,7 @@ export interface CreateDocumentParams {
   type: string;
   size: number;
   content: string;
+  metadata?: string;
 }
 
 export interface UpdateDocumentParams {
@@ -13,6 +14,7 @@ export interface UpdateDocumentParams {
   type?: string;
   size?: number;
   content?: string;
+  metadata?: string;
 }
 
 export class DocumentRepository extends BaseRepository {
@@ -138,6 +140,14 @@ export class DocumentRepository extends BaseRepository {
     if (!allowedTypes.includes(params.type.toLowerCase())) {
       throw new Error(`Document type must be one of: ${allowedTypes.join(', ')}`);
     }
+
+    if (params.metadata !== undefined) {
+      try {
+        JSON.parse(params.metadata);
+      } catch (error) {
+        throw new Error('Invalid metadata JSON format');
+      }
+    }
   }
 
   private validateUpdateParams(params: UpdateDocumentParams): void {
@@ -162,6 +172,14 @@ export class DocumentRepository extends BaseRepository {
 
     if (params.size !== undefined && (typeof params.size !== 'number' || params.size <= 0)) {
       throw new Error('Document size must be greater than 0');
+    }
+
+    if (params.metadata !== undefined) {
+      try {
+        JSON.parse(params.metadata);
+      } catch (error) {
+        throw new Error('Invalid metadata JSON format');
+      }
     }
   }
 }

@@ -68,9 +68,19 @@ export class DocumentService {
    * Обрабатывает Markdown контент
    */
   private processMarkdownContent(content: string): string {
-    // Конвертируем markdown в HTML, затем извлекаем текст
-    const html = marked.parse(content, { async: false }) as string;
-    return this.processHtmlContent(html);
+    // Конвертируем markdown в HTML с опцией gfm для поддержки GitHub Flavored Markdown
+    const html = marked.parse(content, { 
+      gfm: true,
+      breaks: true,
+      async: false 
+    }) as string;
+
+    // Обрабатываем полученный HTML для извлечения чистого текста
+    const dom = new JSDOM(html);
+    const text = dom.window.document.body.textContent?.trim() || '';
+
+    // Заменяем множественные пробелы и переносы строк на одиночные
+    return text.replace(/\s+/g, ' ');
   }
 
   /**
@@ -107,7 +117,7 @@ export class DocumentService {
       });
     } catch (error) {
       console.error('Error creating document:', error);
-      throw new Error('Failed to create document');
+      throw error instanceof Error ? error : new Error('Failed to create document');
     }
   }
 
@@ -119,7 +129,7 @@ export class DocumentService {
       return this.documentRepository.findById(id);
     } catch (error) {
       console.error('Error getting document:', error);
-      throw new Error('Failed to get document');
+      throw error instanceof Error ? error : new Error('Failed to get document');
     }
   }
 
@@ -131,7 +141,7 @@ export class DocumentService {
       return this.documentRepository.findAll();
     } catch (error) {
       console.error('Error getting all documents:', error);
-      throw new Error('Failed to get documents');
+      throw error instanceof Error ? error : new Error('Failed to get documents');
     }
   }
 
@@ -169,6 +179,9 @@ export class DocumentService {
       return this.documentRepository.update(id, updateData);
     } catch (error) {
       console.error('Error updating document:', error);
+      if (error instanceof Error && error.message.includes('Document not found')) {
+        throw error;
+      }
       throw new Error('Failed to update document');
     }
   }
@@ -181,7 +194,7 @@ export class DocumentService {
       return this.documentRepository.delete(id);
     } catch (error) {
       console.error('Error deleting document:', error);
-      throw new Error('Failed to delete document');
+      throw error instanceof Error ? error : new Error('Failed to delete document');
     }
   }
 
