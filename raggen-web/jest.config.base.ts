@@ -16,7 +16,7 @@ const baseConfig: Config = {
     }]
   },
   transformIgnorePatterns: [
-    '/node_modules/(?!next-themes|@testing-library)/'
+    '/node_modules/(?!next-themes|@testing-library|date-fns)/'
   ],
 };
 
