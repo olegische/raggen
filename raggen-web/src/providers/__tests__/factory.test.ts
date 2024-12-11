@@ -1,16 +1,57 @@
 import { ProviderFactory } from '../factory';
-import { ProviderType, PROVIDER_CONFIG } from '../../config/providers';
 import { YandexGPTProvider } from '../yandex/provider';
 import { GigaChatProvider } from '../gigachat/provider';
+import { ProviderType } from '../../config/providers';
 
-// Мокаем переменные окружения
-process.env.YANDEX_GPT_API_URL = 'https://yandex.api';
-process.env.YANDEX_API_KEY = 'yandex-key';
-process.env.GIGACHAT_API_URL = 'https://gigachat.api';
-process.env.GIGACHAT_CREDENTIALS = 'gigachat-credentials';
+// Мокаем конфигурацию провайдеров
+jest.mock('../../config/providers', () => ({
+  ProviderType: {
+    yandex: 'yandex',
+    gigachat: 'gigachat'
+  },
+  PROVIDER_CONFIG: {
+    yandex: {
+      id: 'yandex',
+      displayName: 'YandexGPT',
+      systemPrompt: 'yandex',
+      apiUrl: 'https://yandex.api',
+      credentials: 'yandex-key'
+    },
+    gigachat: {
+      id: 'gigachat',
+      displayName: 'GigaChat',
+      systemPrompt: 'gigachat',
+      apiUrl: 'https://gigachat.api',
+      credentials: 'gigachat-credentials'
+    }
+  },
+  getProviderConfig: (type: string) => {
+    const config = {
+      yandex: {
+        id: 'yandex',
+        displayName: 'YandexGPT',
+        systemPrompt: 'yandex',
+        apiUrl: 'https://yandex.api',
+        credentials: 'yandex-key'
+      },
+      gigachat: {
+        id: 'gigachat',
+        displayName: 'GigaChat',
+        systemPrompt: 'gigachat',
+        apiUrl: 'https://gigachat.api',
+        credentials: 'gigachat-credentials'
+      }
+    }[type];
+    
+    if (!config) {
+      throw new Error(`Unknown provider: ${type}`);
+    }
+    return config;
+  }
+}));
 
 describe('ProviderFactory', () => {
-  const providers = Object.keys(PROVIDER_CONFIG) as ProviderType[];
+  const providers: ProviderType[] = ['yandex', 'gigachat'];
 
   test.each(providers)('should create %s provider', (type) => {
     const provider = ProviderFactory.createProvider(type);
@@ -50,14 +91,14 @@ describe('ProviderFactory', () => {
     expect(yandexProvider.config).toEqual({
       apiUrl: 'https://yandex.api',
       credentials: 'yandex-key',
-      systemPrompt: PROVIDER_CONFIG.yandex.systemPrompt
+      systemPrompt: 'yandex'
     });
 
     // @ts-expect-error: Accessing protected property for testing
     expect(gigachatProvider.config).toEqual({
       apiUrl: 'https://gigachat.api',
       credentials: 'gigachat-credentials',
-      systemPrompt: PROVIDER_CONFIG.gigachat.systemPrompt
+      systemPrompt: 'gigachat'
     });
   });
 });
