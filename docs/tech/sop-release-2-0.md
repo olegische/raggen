@@ -33,10 +33,10 @@
     - [x] Drag-and-drop интерфейс
     - [x] Валидация типов файлов
     - [x] Тестирование загрузки файлов
-  - [ ] Создать API endpoint для загрузки
-    - [ ] Интеграция с raggen-embed
-    - [ ] Обработка ошибок
-    - [ ] Тестирование endpoint
+  - [x] Создать API endpoint для загрузки
+    - [x] Интеграция с raggen-embed
+    - [x] Обработка ошибок
+    - [x] Тестирование endpoint
 - [ ] Настроить базовое отображение документов
   - [ ] Создать компонент DocumentList
     - [ ] Отображение списка документов
@@ -52,11 +52,11 @@
     - [x] Методы CRUD
     - [x] Обработка ошибок
     - [x] Тестирование сервиса
-  - [ ] Создать API endpoints
-    - [ ] GET /api/documents
-    - [ ] GET /api/documents/:id
-    - [ ] DELETE /api/documents/:id
-    - [ ] Тестирование endpoints
+  - [x] Создать API endpoints
+    - [x] GET /api/documents
+    - [x] GET /api/documents/:id
+    - [x] DELETE /api/documents/:id
+    - [x] Тестирование endpoints
 
 ### 1.3. Обновление базы данных
 - [x] Создать таблицы для документов
