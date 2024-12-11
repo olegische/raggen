@@ -19,7 +19,8 @@ const config: Config = {
       testEnvironment: 'node',
       testMatch: [
         '<rootDir>/src/services/**/*.test.ts',
-        '<rootDir>/src/lib/**/*.test.ts'
+        '<rootDir>/src/lib/**/*.test.ts',
+        '<rootDir>/src/app/api/**/*.test.ts'
       ],
     },
   ],

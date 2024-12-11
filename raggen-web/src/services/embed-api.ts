@@ -26,6 +26,11 @@ export interface ErrorResponse {
   details?: string;
 }
 
+export interface DocumentRequest {
+  id: string;
+  content: string;
+}
+
 export class EmbedApiClient {
   private client: AxiosInstance;
   private maxRetries: number;
@@ -136,4 +141,42 @@ export class EmbedApiClient {
       throw error;
     }
   }
-} 
+
+  /**
+   * Добавляет документ в векторное хранилище
+   */
+  async addDocument(document: DocumentRequest): Promise<void> {
+    try {
+      console.log('Adding document:', document.id);
+      await this.retryRequest(() => 
+        this.client.post('/api/v1/documents', document)
+      );
+      console.log('Document added successfully');
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.data) {
+        const errorData = error.response.data as ErrorResponse;
+        throw new Error(errorData.details || errorData.error);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Удаляет документ из векторного хранилища
+   */
+  async deleteDocument(id: string): Promise<void> {
+    try {
+      console.log('Deleting document:', id);
+      await this.retryRequest(() => 
+        this.client.delete(`/api/v1/documents/${id}`)
+      );
+      console.log('Document deleted successfully');
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.data) {
+        const errorData = error.response.data as ErrorResponse;
+        throw new Error(errorData.details || errorData.error);
+      }
+      throw error;
+    }
+  }
+}
