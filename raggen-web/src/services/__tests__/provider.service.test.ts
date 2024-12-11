@@ -1,10 +1,10 @@
 import { ProviderService } from '../provider.service';
-import { ProviderFactory } from '@/providers/factory';
-import { BaseProvider } from '@/providers/base.provider';
+import { ProviderFactory } from '../../providers/factory';
+import { BaseProvider } from '../../providers/base.provider';
 import { z } from 'zod';
 
 // Мокаем фабрику провайдеров
-jest.mock('@/providers/factory');
+jest.mock('../../providers/factory');
 const mockedFactory = jest.mocked(ProviderFactory);
 
 describe('ProviderService', () => {
@@ -13,7 +13,7 @@ describe('ProviderService', () => {
     constructor: { name: 'YandexProvider' },
     generateResponse: jest.fn(),
     listModels: jest.fn(),
-    config: { apiUrl: 'test', credentials: 'test' },
+    config: { apiUrl: 'test', credentials: 'test', systemPrompt: 'yandex' },
     responseSchema: z.any(),
     validateResponse: jest.fn(),
     formatError: jest.fn(),
@@ -22,7 +22,11 @@ describe('ProviderService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockedFactory.createProvider.mockReturnValue(mockProvider as unknown as BaseProvider);
+    mockedFactory.getProvider.mockReturnValue(mockProvider as unknown as BaseProvider);
+    mockedFactory.getSupportedProviders.mockReturnValue([
+      { id: 'yandex', displayName: 'YandexGPT', systemPrompt: 'yandex' },
+      { id: 'gigachat', displayName: 'GigaChat', systemPrompt: 'gigachat' }
+    ]);
     ProviderService.clearCache();
   });
 
@@ -32,9 +36,12 @@ describe('ProviderService', () => {
 
       const providers = await ProviderService.getAvailableProviders();
 
-      expect(providers).toContain('yandex');
-      expect(providers).toContain('gigachat');
-      expect(mockedFactory.createProvider).toHaveBeenCalledTimes(2);
+      expect(providers).toHaveLength(2);
+      expect(providers[0].id).toBe('yandex');
+      expect(providers[1].id).toBe('gigachat');
+      expect(providers[0].status.available).toBe(true);
+      expect(providers[1].status.available).toBe(true);
+      expect(mockedFactory.getSupportedProviders).toHaveBeenCalled();
     });
 
     it('should filter out unavailable providers', async () => {
@@ -44,8 +51,9 @@ describe('ProviderService', () => {
 
       const providers = await ProviderService.getAvailableProviders();
 
-      expect(providers).toContain('yandex');
-      expect(providers).not.toContain('gigachat');
+      expect(providers).toHaveLength(2);
+      expect(providers[0].status.available).toBe(true);
+      expect(providers[1].status.available).toBe(false);
     });
   });
 
@@ -56,7 +64,7 @@ describe('ProviderService', () => {
       const isAvailable = await ProviderService.isProviderAvailable('yandex');
 
       expect(isAvailable).toBe(true);
-      expect(mockedFactory.createProvider).toHaveBeenCalledWith('yandex');
+      expect(mockedFactory.getProvider).toHaveBeenCalledWith('yandex');
     });
 
     it('should return false for failing provider', async () => {
@@ -80,7 +88,7 @@ describe('ProviderService', () => {
 
     it('should refresh status after interval', async () => {
       jest.useFakeTimers();
-      const checkInterval = ProviderService['checkInterval'];
+      const checkInterval = 60 * 1000; // 1 минута
       mockProvider.listModels.mockResolvedValue(['model1']);
 
       // Первая проверка
@@ -148,4 +156,4 @@ describe('ProviderService', () => {
       expect(ProviderService.getProviderStatus('gigachat')).toBeUndefined();
     });
   });
-}); 
+});
