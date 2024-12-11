@@ -40,13 +40,14 @@ model Message {
 
 model Embedding {
   id          Int      @id @default(autoincrement())
-  messageId   Int      @unique // Связь один-к-одному с сообщением
-  message     Message  @relation(fields: [messageId], references: [id])
+  messageId   Int?     @unique // Связь один-к-одному с сообщением
+  message     Message? @relation(fields: [messageId], references: [id])
   vector      Bytes    // Эмбеддинг в бинарном формате (384 * 4 байта)
   vectorId    Int      // ID вектора в FAISS
   createdAt   DateTime @default(now())
 
   @@index([vectorId]) // Индекс для быстрого поиска по ID вектора
+  @@index([messageId])
 }
 
 model Context {
@@ -61,4 +62,18 @@ model Context {
   @@index([messageId])
   @@index([sourceId])
   @@index([score])
+}
+
+model Document {
+  id          String   @id @default(uuid())
+  name        String   // Имя файла
+  type        String   // Тип файла (txt, md, html)
+  size        Int      // Размер файла в байтах
+  content     String   // Содержимое файла
+  metadata    String?  // Дополнительные метаданные в формате JSON строки (автор, дата создания файла и т.д.)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([type])
+  @@index([createdAt])
 }
