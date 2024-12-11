@@ -1,5 +1,6 @@
 import { PrismaClient, Embedding, Context, Message } from '@prisma/client';
 import { BaseRepository } from './base.repository';
+import { MessageRepository } from './message.repository';
 
 export interface CreateEmbeddingParams {
   messageId: number;
@@ -23,14 +24,23 @@ export type ContextWithMessage = Context & {
 };
 
 export class EmbeddingRepository extends BaseRepository {
+  private messageRepository: MessageRepository;
+
   constructor(prisma: PrismaClient) {
     super(prisma);
+    this.messageRepository = new MessageRepository(prisma);
   }
 
   // Embedding operations
   async createEmbedding(params: CreateEmbeddingParams): Promise<Embedding> {
     try {
       this.validateEmbeddingParams(params);
+
+      // Проверяем существование сообщения
+      const message = await this.messageRepository.getMessage(params.messageId);
+      if (!message) {
+        throw new Error('Message not found');
+      }
 
       return await this.prisma.embedding.create({
         data: params
@@ -45,6 +55,12 @@ export class EmbeddingRepository extends BaseRepository {
     try {
       if (!messageId || messageId <= 0) {
         throw new Error('Invalid message ID');
+      }
+
+      // Проверяем существование сообщения
+      const message = await this.messageRepository.getMessage(messageId);
+      if (!message) {
+        return null;
       }
 
       return await this.prisma.embedding.findUnique({
@@ -66,7 +82,7 @@ export class EmbeddingRepository extends BaseRepository {
         throw new Error('Invalid vector ID in array');
       }
 
-      return await this.prisma.embedding.findMany({
+      const embeddings = await this.prisma.embedding.findMany({
         where: {
           vectorId: {
             in: vectorIds
@@ -76,6 +92,8 @@ export class EmbeddingRepository extends BaseRepository {
           message: true
         }
       });
+
+      return embeddings;
     } catch (error) {
       console.error('Error getting embeddings by vector IDs:', error);
       throw error instanceof Error ? error : new Error('Failed to get embeddings');
@@ -86,6 +104,17 @@ export class EmbeddingRepository extends BaseRepository {
   async createContext(params: CreateContextParams): Promise<Context> {
     try {
       this.validateContextParams(params);
+
+      // Проверяем существование сообщений
+      const message = await this.messageRepository.getMessage(params.messageId);
+      if (!message) {
+        throw new Error('Message not found');
+      }
+
+      const sourceMessage = await this.messageRepository.getMessage(params.sourceId);
+      if (!sourceMessage) {
+        throw new Error('Source message not found');
+      }
 
       return await this.prisma.context.create({
         data: params
@@ -102,7 +131,22 @@ export class EmbeddingRepository extends BaseRepository {
         throw new Error('Contexts array is empty');
       }
 
+      // Проверяем валидность всех контекстов
       contexts.forEach(this.validateContextParams);
+
+      // Проверяем существование всех сообщений
+      const messageIds = contexts.map(c => c.messageId);
+      const sourceIds = contexts.map(c => c.sourceId);
+      const allIds = Array.from(new Set([...messageIds, ...sourceIds]));
+
+      const messages = await Promise.all(
+        allIds.map(id => this.messageRepository.getMessage(id))
+      );
+
+      const missingIds = messages.some(m => m === null);
+      if (missingIds) {
+        throw new Error('Some messages not found');
+      }
 
       await this.prisma.context.createMany({
         data: contexts
@@ -117,6 +161,12 @@ export class EmbeddingRepository extends BaseRepository {
     try {
       if (!messageId || messageId <= 0) {
         throw new Error('Invalid message ID');
+      }
+
+      // Проверяем существование сообщения
+      const message = await this.messageRepository.getMessage(messageId);
+      if (!message) {
+        return [];
       }
 
       return await this.prisma.context.findMany({
