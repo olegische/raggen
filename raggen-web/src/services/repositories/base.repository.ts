@@ -1,10 +1,11 @@
 import { PrismaClient } from '@prisma/client';
+import prismaClient from '../../lib/db';
 
 export class BaseRepository {
   protected readonly prisma: PrismaClient;
 
-  constructor(prismaClient?: PrismaClient) {
-    this.prisma = prismaClient || new PrismaClient();
+  constructor(client?: PrismaClient) {
+    this.prisma = client || prismaClient;
   }
 
   createRepository<T extends BaseRepository>(
