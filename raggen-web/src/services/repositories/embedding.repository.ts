@@ -1,9 +1,11 @@
-import { PrismaClient, Embedding, Context, Message } from '@prisma/client';
+import { PrismaClient, Embedding, Context, Message, Document } from '@prisma/client';
 import { BaseRepository } from './base.repository';
 import { MessageRepository } from './message.repository';
+import { DocumentRepository } from './document.repository';
 
 export interface CreateEmbeddingParams {
-  messageId: number;
+  messageId?: number;
+  documentId?: string;
   vector: Buffer;
   vectorId: number;
 }
@@ -11,24 +13,29 @@ export interface CreateEmbeddingParams {
 export interface CreateContextParams {
   messageId: number;
   sourceId: number;
+  documentId?: string;
   score: number;
   usedInPrompt: boolean;
 }
 
-export type EmbeddingWithMessage = Embedding & {
-  message: Message;
+export type EmbeddingWithRelations = Embedding & {
+  message: Message | null;
+  document: Document | null;
 };
 
-export type ContextWithMessage = Context & {
+export type ContextWithRelations = Context & {
   message: Message;
+  document: Document | null;
 };
 
 export class EmbeddingRepository extends BaseRepository {
   private messageRepository: MessageRepository;
+  private documentRepository: DocumentRepository;
 
   constructor(prisma: PrismaClient) {
     super(prisma);
     this.messageRepository = new MessageRepository(prisma);
+    this.documentRepository = new DocumentRepository(prisma);
   }
 
   // Embedding operations
@@ -36,10 +43,17 @@ export class EmbeddingRepository extends BaseRepository {
     try {
       this.validateEmbeddingParams(params);
 
-      // Проверяем существование сообщения
-      const message = await this.messageRepository.getMessage(params.messageId);
-      if (!message) {
-        throw new Error('Message not found');
+      // Проверяем существование сообщения или документа
+      if (params.messageId) {
+        const message = await this.messageRepository.getMessage(params.messageId);
+        if (!message) {
+          throw new Error('Message not found');
+        }
+      } else if (params.documentId) {
+        const document = await this.documentRepository.findById(params.documentId);
+        if (!document) {
+          throw new Error('Document not found');
+        }
       }
 
       return await this.prisma.embedding.create({
@@ -72,7 +86,28 @@ export class EmbeddingRepository extends BaseRepository {
     }
   }
 
-  async getEmbeddingsByVectorIds(vectorIds: number[]): Promise<EmbeddingWithMessage[]> {
+  async getEmbeddingByDocumentId(documentId: string): Promise<Embedding | null> {
+    try {
+      if (!documentId) {
+        throw new Error('Invalid document ID');
+      }
+
+      // Проверяем существование документа
+      const document = await this.documentRepository.findById(documentId);
+      if (!document) {
+        return null;
+      }
+
+      return await this.prisma.embedding.findUnique({
+        where: { documentId }
+      });
+    } catch (error) {
+      console.error('Error getting embedding by document ID:', error);
+      throw error instanceof Error ? error : new Error('Failed to get embedding');
+    }
+  }
+
+  async getEmbeddingsByVectorIds(vectorIds: number[]): Promise<EmbeddingWithRelations[]> {
     try {
       if (!vectorIds.length) {
         throw new Error('Vector IDs array is empty');
@@ -89,13 +124,14 @@ export class EmbeddingRepository extends BaseRepository {
           }
         },
         include: {
-          message: true
+          message: true,
+          document: true
         }
       });
 
-      // Filter out any embeddings with null messages
-      return embeddings.filter((embedding): embedding is EmbeddingWithMessage => 
-        embedding.message !== null
+      // Filter out embeddings without both message and document
+      return embeddings.filter((embedding): embedding is EmbeddingWithRelations => 
+        embedding.message !== null || embedding.document !== null
       );
     } catch (error) {
       console.error('Error getting embeddings by vector IDs:', error);
@@ -108,7 +144,7 @@ export class EmbeddingRepository extends BaseRepository {
     try {
       this.validateContextParams(params);
 
-      // Проверяем существование сообщений
+      // Проверяем существование сообщений и документа
       const message = await this.messageRepository.getMessage(params.messageId);
       if (!message) {
         throw new Error('Message not found');
@@ -117,6 +153,13 @@ export class EmbeddingRepository extends BaseRepository {
       const sourceMessage = await this.messageRepository.getMessage(params.sourceId);
       if (!sourceMessage) {
         throw new Error('Source message not found');
+      }
+
+      if (params.documentId) {
+        const document = await this.documentRepository.findById(params.documentId);
+        if (!document) {
+          throw new Error('Document not found');
+        }
       }
 
       return await this.prisma.context.create({
@@ -151,6 +194,22 @@ export class EmbeddingRepository extends BaseRepository {
         throw new Error('Some messages not found');
       }
 
+      // Проверяем существование всех документов
+      const documentIds = contexts
+        .map(c => c.documentId)
+        .filter((id): id is string => id !== undefined);
+
+      if (documentIds.length > 0) {
+        const documents = await Promise.all(
+          documentIds.map(id => this.documentRepository.findById(id))
+        );
+
+        const missingDocuments = documents.some(doc => doc === null);
+        if (missingDocuments) {
+          throw new Error('Some documents not found');
+        }
+      }
+
       await this.prisma.context.createMany({
         data: contexts
       });
@@ -160,7 +219,7 @@ export class EmbeddingRepository extends BaseRepository {
     }
   }
 
-  async getContextByMessageId(messageId: number): Promise<ContextWithMessage[]> {
+  async getContextByMessageId(messageId: number): Promise<ContextWithRelations[]> {
     try {
       if (!messageId || messageId <= 0) {
         throw new Error('Invalid message ID');
@@ -175,13 +234,14 @@ export class EmbeddingRepository extends BaseRepository {
       const contexts = await this.prisma.context.findMany({
         where: { messageId },
         include: {
-          message: true
+          message: true,
+          document: true
         },
         orderBy: { score: 'desc' }
       });
 
-      // Filter out any contexts with null messages
-      return contexts.filter((context): context is ContextWithMessage => 
+      // Filter out contexts without message
+      return contexts.filter((context): context is ContextWithRelations => 
         context.message !== null
       );
     } catch (error) {
@@ -190,9 +250,48 @@ export class EmbeddingRepository extends BaseRepository {
     }
   }
 
+  async getContextByDocumentId(documentId: string): Promise<ContextWithRelations[]> {
+    try {
+      if (!documentId) {
+        throw new Error('Invalid document ID');
+      }
+
+      // Проверяем существование документа
+      const document = await this.documentRepository.findById(documentId);
+      if (!document) {
+        return [];
+      }
+
+      const contexts = await this.prisma.context.findMany({
+        where: { documentId },
+        include: {
+          message: true,
+          document: true
+        },
+        orderBy: { score: 'desc' }
+      });
+
+      // Filter out contexts without message
+      return contexts.filter((context): context is ContextWithRelations => 
+        context.message !== null
+      );
+    } catch (error) {
+      console.error('Error getting context by document ID:', error);
+      throw error instanceof Error ? error : new Error('Failed to get context');
+    }
+  }
+
   // Validation methods
   private validateEmbeddingParams(params: CreateEmbeddingParams): void {
-    if (!params.messageId || params.messageId <= 0) {
+    if (!params.messageId && !params.documentId) {
+      throw new Error('Either message ID or document ID is required');
+    }
+
+    if (params.messageId && params.documentId) {
+      throw new Error('Cannot create embedding for both message and document');
+    }
+
+    if (params.messageId && params.messageId <= 0) {
       throw new Error('Invalid message ID');
     }
 

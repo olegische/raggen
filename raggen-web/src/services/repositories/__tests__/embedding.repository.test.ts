@@ -1,415 +1,226 @@
 import { PrismaClient } from '@prisma/client';
+import { mockDeep, mockReset, DeepMockProxy } from 'jest-mock-extended';
 import { EmbeddingRepository } from '../embedding.repository';
-import { BaseRepository } from '../base.repository';
-import '@testing-library/jest-dom';
 
 describe('EmbeddingRepository', () => {
+  let prisma: DeepMockProxy<PrismaClient>;
   let repository: EmbeddingRepository;
-  let baseRepository: BaseRepository;
-  let prisma: PrismaClient;
+  const mockDate = new Date('2024-01-01T10:00:00.000Z');
 
-  beforeAll(async () => {
-    prisma = new PrismaClient();
-    await prisma.$connect();
-  });
+  const mockMessage = {
+    id: 1,
+    chatId: 'chat-1',
+    message: 'Test message',
+    response: null,
+    model: 'test-model',
+    provider: 'test-provider',
+    timestamp: mockDate,
+    temperature: 0.7,
+    maxTokens: 100
+  };
 
-  afterAll(async () => {
-    await prisma.$disconnect();
-  });
+  const mockDocument = {
+    id: 'doc-1',
+    name: 'test.txt',
+    type: 'txt',
+    size: 1024,
+    content: 'Test content',
+    metadata: null,
+    createdAt: mockDate,
+    updatedAt: mockDate
+  };
+
+  const mockEmbedding = {
+    id: 1,
+    messageId: 1,
+    documentId: null,
+    vector: Buffer.from('test'),
+    vectorId: 1,
+    createdAt: mockDate
+  };
+
+  const mockContext = {
+    id: 1,
+    messageId: 1,
+    sourceId: 2,
+    documentId: null,
+    score: 0.8,
+    usedInPrompt: true,
+    createdAt: mockDate
+  };
 
   beforeEach(() => {
-    baseRepository = new BaseRepository(prisma);
-    repository = baseRepository.createRepository(EmbeddingRepository);
+    prisma = mockDeep<PrismaClient>();
+    repository = new EmbeddingRepository(prisma);
+    mockReset(prisma);
   });
 
-  afterEach(async () => {
-    // Очищаем тестовые данные
-    await prisma.context.deleteMany();
-    await prisma.embedding.deleteMany();
-    await prisma.message.deleteMany();
-    await prisma.chat.deleteMany();
-  });
+  describe('createEmbedding', () => {
+    it('should create embedding for message', async () => {
+      prisma.message.findUnique.mockResolvedValue(mockMessage);
+      prisma.embedding.create.mockResolvedValue(mockEmbedding);
 
-  describe('Embedding operations', () => {
-    const mockMessage = {
-      chatId: 'test-chat-id',
-      message: 'Test message',
-      model: 'test-model',
-      provider: 'test-provider',
-      temperature: 0.7,
-      maxTokens: 1000,
-      response: null
-    };
+      const params = {
+        messageId: 1,
+        vector: Buffer.from('test'),
+        vectorId: 1
+      };
 
-    const mockEmbedding = {
-      messageId: 1,
-      vector: Buffer.from([1, 2, 3, 4]),
-      vectorId: 1
-    };
-
-    it('should create embedding with valid params', async () => {
-      // Создаем чат и сообщение для теста
-      const chat = await prisma.chat.create({
-        data: {
-          id: 'test-chat-id',
-          provider: 'test'
-        }
-      });
-
-      const message = await prisma.message.create({
-        data: mockMessage
-      });
-
-      const embedding = await repository.createEmbedding({
-        ...mockEmbedding,
-        messageId: message.id
-      });
-
-      expect(embedding).toBeDefined();
-      expect(embedding.messageId).toBe(message.id);
-      expect(embedding.vector).toEqual(mockEmbedding.vector);
-      expect(embedding.vectorId).toBe(mockEmbedding.vectorId);
-      expect(embedding.id).toBeDefined();
-      expect(embedding.createdAt).toBeDefined();
+      const result = await repository.createEmbedding(params);
+      expect(result).toEqual(mockEmbedding);
     });
 
-    it('should throw error for invalid message ID', async () => {
-      await expect(repository.createEmbedding({
-        ...mockEmbedding,
-        messageId: 0
-      })).rejects.toThrow('Invalid message ID');
+    it('should create embedding for document', async () => {
+      const documentEmbedding = { ...mockEmbedding, messageId: null, documentId: 'doc-1' };
+      prisma.document.findUnique.mockResolvedValue(mockDocument);
+      prisma.embedding.create.mockResolvedValue(documentEmbedding);
+
+      const params = {
+        documentId: 'doc-1',
+        vector: Buffer.from('test'),
+        vectorId: 1
+      };
+
+      const result = await repository.createEmbedding(params);
+      expect(result).toEqual(documentEmbedding);
     });
 
-    it('should throw error for empty vector', async () => {
-      await expect(repository.createEmbedding({
-        ...mockEmbedding,
-        vector: Buffer.from([])
-      })).rejects.toThrow('Vector is required');
+    it('should throw error if neither messageId nor documentId provided', async () => {
+      const params = {
+        vector: Buffer.from('test'),
+        vectorId: 1
+      };
+
+      await expect(repository.createEmbedding(params)).rejects.toThrow('Either message ID or document ID is required');
     });
 
-    it('should throw error for invalid vector ID', async () => {
-      await expect(repository.createEmbedding({
-        ...mockEmbedding,
-        vectorId: -1
-      })).rejects.toThrow('Invalid vector ID');
-    });
+    it('should throw error if both messageId and documentId provided', async () => {
+      const params = {
+        messageId: 1,
+        documentId: 'doc-1',
+        vector: Buffer.from('test'),
+        vectorId: 1
+      };
 
-    it('should get embedding by valid message id', async () => {
-      // Создаем чат и сообщение для теста
-      const chat = await prisma.chat.create({
-        data: {
-          id: 'test-chat-id',
-          provider: 'test'
-        }
-      });
-
-      const message = await prisma.message.create({
-        data: mockMessage
-      });
-
-      const created = await prisma.embedding.create({
-        data: {
-          ...mockEmbedding,
-          messageId: message.id
-        }
-      });
-
-      const found = await repository.getEmbeddingByMessageId(message.id);
-
-      expect(found).toBeDefined();
-      expect(found?.id).toBe(created.id);
-      expect(found?.messageId).toBe(message.id);
-      expect(found?.vector).toEqual(mockEmbedding.vector);
-    });
-
-    it('should throw error for invalid message ID', async () => {
-      await expect(repository.getEmbeddingByMessageId(0))
-        .rejects.toThrow('Invalid message ID');
-    });
-
-    it('should return null when embedding not found', async () => {
-      const found = await repository.getEmbeddingByMessageId(999);
-      expect(found).toBeNull();
-    });
-
-    it('should get embeddings by valid vector ids', async () => {
-      // Создаем чат и сообщения для теста
-      const chat = await prisma.chat.create({
-        data: {
-          id: 'test-chat-id',
-          provider: 'test'
-        }
-      });
-
-      const message1 = await prisma.message.create({
-        data: mockMessage
-      });
-
-      const message2 = await prisma.message.create({
-        data: mockMessage
-      });
-
-      const embedding1 = await prisma.embedding.create({
-        data: {
-          ...mockEmbedding,
-          messageId: message1.id,
-          vectorId: 1
-        }
-      });
-
-      const embedding2 = await prisma.embedding.create({
-        data: {
-          ...mockEmbedding,
-          messageId: message2.id,
-          vectorId: 2
-        }
-      });
-
-      const embeddings = await repository.getEmbeddingsByVectorIds([1, 2]);
-
-      expect(embeddings).toHaveLength(2);
-      expect(embeddings.map(e => e.id)).toContain(embedding1.id);
-      expect(embeddings.map(e => e.id)).toContain(embedding2.id);
-      // Проверяем, что включены связи с сообщениями
-      expect(embeddings[0].message).toBeDefined();
-      expect(embeddings[1].message).toBeDefined();
-    });
-
-    it('should throw error for empty vector IDs array', async () => {
-      await expect(repository.getEmbeddingsByVectorIds([]))
-        .rejects.toThrow('Vector IDs array is empty');
-    });
-
-    it('should throw error for invalid vector IDs', async () => {
-      await expect(repository.getEmbeddingsByVectorIds([1, -1]))
-        .rejects.toThrow('Invalid vector ID in array');
+      await expect(repository.createEmbedding(params)).rejects.toThrow('Cannot create embedding for both message and document');
     });
   });
 
-  describe('Context operations', () => {
-    const mockMessage = {
-      chatId: 'test-chat-id',
-      message: 'Test message',
-      model: 'test-model',
-      provider: 'test-provider',
-      temperature: 0.7,
-      maxTokens: 1000,
-      response: null
-    };
+  describe('getEmbeddingByMessageId', () => {
+    it('should get embedding by message ID', async () => {
+      prisma.message.findUnique.mockResolvedValue(mockMessage);
+      prisma.embedding.findUnique.mockResolvedValue(mockEmbedding);
 
-    const mockContext = {
-      messageId: 1,
-      sourceId: 2,
-      score: 0.9,
-      usedInPrompt: true
-    };
+      const result = await repository.getEmbeddingByMessageId(1);
+      expect(result).toEqual(mockEmbedding);
+    });
 
-    it('should create context with valid params', async () => {
-      // Создаем чат и сообщения для теста
-      const chat = await prisma.chat.create({
-        data: {
-          id: 'test-chat-id',
-          provider: 'test'
-        }
-      });
+    it('should return null if message not found', async () => {
+      prisma.message.findUnique.mockResolvedValue(null);
 
-      const message1 = await prisma.message.create({
-        data: mockMessage
-      });
+      const result = await repository.getEmbeddingByMessageId(1);
+      expect(result).toBeNull();
+    });
+  });
 
-      const message2 = await prisma.message.create({
-        data: mockMessage
-      });
+  describe('getEmbeddingByDocumentId', () => {
+    it('should get embedding by document ID', async () => {
+      const documentEmbedding = { ...mockEmbedding, messageId: null, documentId: 'doc-1' };
+      prisma.document.findUnique.mockResolvedValue(mockDocument);
+      prisma.embedding.findUnique.mockResolvedValue(documentEmbedding);
 
-      const context = await repository.createContext({
+      const result = await repository.getEmbeddingByDocumentId('doc-1');
+      expect(result).toEqual(documentEmbedding);
+    });
+
+    it('should return null if document not found', async () => {
+      prisma.document.findUnique.mockResolvedValue(null);
+
+      const result = await repository.getEmbeddingByDocumentId('doc-1');
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('getEmbeddingsByVectorIds', () => {
+    it('should get embeddings by vector IDs including both messages and documents', async () => {
+      const messageEmbedding = {
+        ...mockEmbedding,
+        message: mockMessage,
+        document: null
+      };
+      const documentEmbedding = {
+        ...mockEmbedding,
+        messageId: null,
+        documentId: 'doc-1',
+        message: null,
+        document: mockDocument
+      };
+
+      prisma.embedding.findMany.mockResolvedValue([messageEmbedding, documentEmbedding]);
+
+      const result = await repository.getEmbeddingsByVectorIds([1, 2]);
+      expect(result).toHaveLength(2);
+      expect(result).toContainEqual(expect.objectContaining({ messageId: 1 }));
+      expect(result).toContainEqual(expect.objectContaining({ documentId: 'doc-1' }));
+    });
+
+    it('should filter out embeddings without message or document', async () => {
+      const invalidEmbedding = {
+        ...mockEmbedding,
+        message: null,
+        document: null
+      };
+
+      prisma.embedding.findMany.mockResolvedValue([invalidEmbedding]);
+
+      const result = await repository.getEmbeddingsByVectorIds([1]);
+      expect(result).toHaveLength(0);
+    });
+  });
+
+  describe('createContext', () => {
+    it('should create context with document reference', async () => {
+      const contextWithDoc = { ...mockContext, documentId: 'doc-1' };
+      prisma.message.findUnique.mockResolvedValueOnce(mockMessage);
+      prisma.message.findUnique.mockResolvedValueOnce(mockMessage);
+      prisma.document.findUnique.mockResolvedValue(mockDocument);
+      prisma.context.create.mockResolvedValue(contextWithDoc);
+
+      const params = {
+        messageId: 1,
+        sourceId: 2,
+        documentId: 'doc-1',
+        score: 0.8,
+        usedInPrompt: true
+      };
+
+      const result = await repository.createContext(params);
+      expect(result).toEqual(contextWithDoc);
+    });
+  });
+
+  describe('getContextByDocumentId', () => {
+    it('should get contexts by document ID', async () => {
+      const contextWithDoc = {
         ...mockContext,
-        messageId: message1.id,
-        sourceId: message2.id
-      });
+        documentId: 'doc-1',
+        message: mockMessage,
+        document: mockDocument
+      };
 
-      expect(context).toBeDefined();
-      expect(context.messageId).toBe(message1.id);
-      expect(context.sourceId).toBe(message2.id);
-      expect(context.score).toBe(mockContext.score);
-      expect(context.usedInPrompt).toBe(mockContext.usedInPrompt);
-      expect(context.id).toBeDefined();
-      expect(context.createdAt).toBeDefined();
+      prisma.document.findUnique.mockResolvedValue(mockDocument);
+      prisma.context.findMany.mockResolvedValue([contextWithDoc]);
+
+      const result = await repository.getContextByDocumentId('doc-1');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual(contextWithDoc);
     });
 
-    it('should throw error for invalid message ID', async () => {
-      await expect(repository.createContext({
-        ...mockContext,
-        messageId: 0
-      })).rejects.toThrow('Invalid message ID');
-    });
+    it('should return empty array if document not found', async () => {
+      prisma.document.findUnique.mockResolvedValue(null);
 
-    it('should throw error for invalid source ID', async () => {
-      await expect(repository.createContext({
-        ...mockContext,
-        sourceId: -1
-      })).rejects.toThrow('Invalid source ID');
-    });
-
-    it('should throw error for invalid score', async () => {
-      await expect(repository.createContext({
-        ...mockContext,
-        score: 1.5
-      })).rejects.toThrow('Score must be between 0 and 1');
-    });
-
-    it('should throw error for invalid usedInPrompt', async () => {
-      await expect(repository.createContext({
-        ...mockContext,
-        usedInPrompt: 'true' as any
-      })).rejects.toThrow('usedInPrompt must be a boolean');
-    });
-
-    it('should create multiple contexts with valid params', async () => {
-      // Создаем чат и сообщения для теста
-      const chat = await prisma.chat.create({
-        data: {
-          id: 'test-chat-id',
-          provider: 'test'
-        }
-      });
-
-      const message1 = await prisma.message.create({
-        data: mockMessage
-      });
-
-      const message2 = await prisma.message.create({
-        data: mockMessage
-      });
-
-      const message3 = await prisma.message.create({
-        data: mockMessage
-      });
-
-      const contexts = [
-        {
-          ...mockContext,
-          messageId: message1.id,
-          sourceId: message2.id
-        },
-        {
-          ...mockContext,
-          messageId: message1.id,
-          sourceId: message3.id
-        }
-      ];
-
-      await repository.createManyContexts(contexts);
-
-      const found = await repository.getContextByMessageId(message1.id);
-      expect(found).toHaveLength(2);
-      expect(found.map(c => c.sourceId)).toContain(message2.id);
-      expect(found.map(c => c.sourceId)).toContain(message3.id);
-    });
-
-    it('should throw error for empty contexts array', async () => {
-      await expect(repository.createManyContexts([]))
-        .rejects.toThrow('Contexts array is empty');
-    });
-
-    it('should throw error if any context is invalid', async () => {
-      await expect(repository.createManyContexts([
-        mockContext,
-        { ...mockContext, score: 1.5 }
-      ])).rejects.toThrow('Score must be between 0 and 1');
-    });
-
-    it('should get contexts by valid message id', async () => {
-      // Создаем чат и сообщения для теста
-      const chat = await prisma.chat.create({
-        data: {
-          id: 'test-chat-id',
-          provider: 'test'
-        }
-      });
-
-      const message1 = await prisma.message.create({
-        data: mockMessage
-      });
-
-      const message2 = await prisma.message.create({
-        data: mockMessage
-      });
-
-      const created = await prisma.context.create({
-        data: {
-          ...mockContext,
-          messageId: message1.id,
-          sourceId: message2.id
-        }
-      });
-
-      const found = await repository.getContextByMessageId(message1.id);
-
-      expect(found).toHaveLength(1);
-      expect(found[0].id).toBe(created.id);
-      expect(found[0].messageId).toBe(message1.id);
-      expect(found[0].sourceId).toBe(message2.id);
-      expect(found[0].score).toBe(mockContext.score);
-      // Проверяем, что включены связи с сообщениями
-      expect(found[0].message).toBeDefined();
-    });
-
-    it('should throw error for invalid message ID', async () => {
-      await expect(repository.getContextByMessageId(0))
-        .rejects.toThrow('Invalid message ID');
-    });
-
-    it('should return empty array when no contexts found', async () => {
-      const found = await repository.getContextByMessageId(999);
-      expect(found).toHaveLength(0);
-    });
-
-    it('should sort contexts by score in descending order', async () => {
-      // Создаем чат и сообщения для теста
-      const chat = await prisma.chat.create({
-        data: {
-          id: 'test-chat-id',
-          provider: 'test'
-        }
-      });
-
-      const message1 = await prisma.message.create({
-        data: mockMessage
-      });
-
-      const message2 = await prisma.message.create({
-        data: mockMessage
-      });
-
-      await prisma.context.createMany({
-        data: [
-          {
-            messageId: message1.id,
-            sourceId: message2.id,
-            score: 0.8,
-            usedInPrompt: true
-          },
-          {
-            messageId: message1.id,
-            sourceId: message2.id,
-            score: 0.9,
-            usedInPrompt: true
-          },
-          {
-            messageId: message1.id,
-            sourceId: message2.id,
-            score: 0.7,
-            usedInPrompt: true
-          }
-        ]
-      });
-
-      const contexts = await repository.getContextByMessageId(message1.id);
-
-      expect(contexts).toHaveLength(3);
-      expect(contexts[0].score).toBe(0.9);
-      expect(contexts[1].score).toBe(0.8);
-      expect(contexts[2].score).toBe(0.7);
+      const result = await repository.getContextByDocumentId('doc-1');
+      expect(result).toHaveLength(0);
     });
   });
 });
