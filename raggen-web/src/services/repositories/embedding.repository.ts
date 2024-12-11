@@ -37,7 +37,7 @@ export class EmbeddingRepository extends BaseRepository {
       });
     } catch (error) {
       console.error('Error creating embedding:', error);
-      throw new Error('Failed to create embedding');
+      throw error instanceof Error ? error : new Error('Failed to create embedding');
     }
   }
 
@@ -52,7 +52,7 @@ export class EmbeddingRepository extends BaseRepository {
       });
     } catch (error) {
       console.error('Error getting embedding by message ID:', error);
-      throw new Error('Failed to get embedding');
+      throw error instanceof Error ? error : new Error('Failed to get embedding');
     }
   }
 
@@ -78,7 +78,7 @@ export class EmbeddingRepository extends BaseRepository {
       });
     } catch (error) {
       console.error('Error getting embeddings by vector IDs:', error);
-      throw new Error('Failed to get embeddings');
+      throw error instanceof Error ? error : new Error('Failed to get embeddings');
     }
   }
 
@@ -92,7 +92,7 @@ export class EmbeddingRepository extends BaseRepository {
       });
     } catch (error) {
       console.error('Error creating context:', error);
-      throw new Error('Failed to create context');
+      throw error instanceof Error ? error : new Error('Failed to create context');
     }
   }
 
@@ -109,7 +109,7 @@ export class EmbeddingRepository extends BaseRepository {
       });
     } catch (error) {
       console.error('Error creating multiple contexts:', error);
-      throw new Error('Failed to create contexts');
+      throw error instanceof Error ? error : new Error('Failed to create contexts');
     }
   }
 
@@ -128,7 +128,7 @@ export class EmbeddingRepository extends BaseRepository {
       });
     } catch (error) {
       console.error('Error getting context by message ID:', error);
-      throw new Error('Failed to get context');
+      throw error instanceof Error ? error : new Error('Failed to get context');
     }
   }
 
