@@ -1,4 +1,4 @@
-import { SYSTEM_PROMPTS, SystemPromptType } from './prompts';
+import { SystemPromptType } from './prompts';
 
 export type ProviderType = 'yandex' | 'gigachat';
 
