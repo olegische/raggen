@@ -2,7 +2,7 @@ import { ChatService } from '../chat.service';
 import { DatabaseService } from '../database';
 import { EmbedApiClient } from '../embed-api';
 import { Message, Chat } from '@prisma/client';
-import { ProviderFactory, ProviderInfo } from '../../providers/factory';
+import { ProviderFactory } from '../../providers/factory';
 import { BaseProvider } from '../../providers/base.provider';
 import { ProviderType } from '../../config/providers';
 
