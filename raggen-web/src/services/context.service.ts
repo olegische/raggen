@@ -1,6 +1,8 @@
-import { DatabaseService } from './database';
 import { EmbedApiClient } from './embed-api';
 import { Message } from '@prisma/client';
+import { ChatRepository } from './repositories/chat.repository';
+import { EmbeddingRepository } from './repositories/embedding.repository';
+import { BaseRepository } from './repositories/base.repository';
 
 export interface ContextSearchResult {
   message: Message;
@@ -20,12 +22,16 @@ export class ContextService {
   private static readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
   private contextCache: Map<string, { results: ContextSearchResult[]; timestamp: number }>;
+  private chatRepository: ChatRepository;
+  private embeddingRepository: EmbeddingRepository;
 
   constructor(
-    private readonly database: DatabaseService,
+    baseRepository: BaseRepository,
     public readonly embedApi: EmbedApiClient
   ) {
     this.contextCache = new Map();
+    this.chatRepository = baseRepository.createRepository(ChatRepository);
+    this.embeddingRepository = baseRepository.createRepository(EmbeddingRepository);
   }
 
   /**
@@ -56,12 +62,12 @@ export class ContextService {
     );
 
     // Получаем сообщения по vector_id
-    const embeddings = await this.database.getEmbeddingsByVectorIds(
+    const embeddings = await this.embeddingRepository.getEmbeddingsByVectorIds(
       filteredResults.slice(0, maxResults).map(r => r.vector_id)
     );
 
     // Получаем сообщения из базы данных
-    const messages = await this.database.getMessagesByIds(
+    const messages = await this.chatRepository.getMessagesByIds(
       embeddings.map(e => e.messageId)
     );
 
@@ -102,7 +108,7 @@ export class ContextService {
       usedInPrompt: context.usedInPrompt
     }));
 
-    await this.database.createManyContexts(contextData);
+    await this.embeddingRepository.createManyContexts(contextData);
   }
 
   /**
@@ -155,4 +161,4 @@ export class ContextService {
       timestamp: Date.now()
     });
   }
-} 
+}

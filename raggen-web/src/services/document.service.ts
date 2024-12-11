@@ -1,7 +1,8 @@
-import { DatabaseService } from './database';
 import { Document } from '@prisma/client';
 import { JSDOM } from 'jsdom';
 import { marked } from 'marked';
+import { BaseRepository } from './repositories/base.repository';
+import { DocumentRepository } from './repositories/document.repository';
 
 export interface DocumentMetadata {
   author?: string;
@@ -12,10 +13,12 @@ export interface DocumentMetadata {
 export class DocumentService {
   private readonly supportedTypes = ['txt', 'md', 'html'];
   private readonly maxFileSize = 10 * 1024 * 1024; // 10MB
+  private documentRepository: DocumentRepository;
 
-  constructor(
-    private readonly database: DatabaseService
-  ) {}
+  constructor(baseRepository?: BaseRepository) {
+    const repo = baseRepository || new BaseRepository();
+    this.documentRepository = repo.createRepository(DocumentRepository);
+  }
 
   /**
    * Проверяет, поддерживается ли тип файла
@@ -95,7 +98,7 @@ export class DocumentService {
       const processedContent = await this.processContent(content, type);
 
       // Создаем документ
-      return this.database.createDocument({
+      return this.documentRepository.create({
         name,
         type: type.toLowerCase(),
         size,
@@ -113,7 +116,7 @@ export class DocumentService {
    */
   async getDocument(id: string): Promise<Document | null> {
     try {
-      return this.database.getDocument(id);
+      return this.documentRepository.findById(id);
     } catch (error) {
       console.error('Error getting document:', error);
       throw new Error('Failed to get document');
@@ -125,7 +128,7 @@ export class DocumentService {
    */
   async getAllDocuments(): Promise<Document[]> {
     try {
-      return this.database.getAllDocuments();
+      return this.documentRepository.findAll();
     } catch (error) {
       console.error('Error getting all documents:', error);
       throw new Error('Failed to get documents');
@@ -144,7 +147,7 @@ export class DocumentService {
     }
   ): Promise<Document> {
     try {
-      const document = await this.database.getDocument(id);
+      const document = await this.documentRepository.findById(id);
       if (!document) {
         throw new Error(`Document not found: ${id}`);
       }
@@ -163,7 +166,7 @@ export class DocumentService {
         updateData.metadata = JSON.stringify(updates.metadata);
       }
 
-      return this.database.updateDocument(id, updateData);
+      return this.documentRepository.update(id, updateData);
     } catch (error) {
       console.error('Error updating document:', error);
       throw new Error('Failed to update document');
@@ -175,7 +178,7 @@ export class DocumentService {
    */
   async deleteDocument(id: string): Promise<Document> {
     try {
-      return this.database.deleteDocument(id);
+      return this.documentRepository.delete(id);
     } catch (error) {
       console.error('Error deleting document:', error);
       throw new Error('Failed to delete document');

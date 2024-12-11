@@ -1,4 +1,9 @@
-import { PrismaClient, Message, Embedding, Context, Chat } from '@prisma/client';
+import { PrismaClient, Chat, Message } from '@prisma/client';
+import { BaseRepository } from './base.repository';
+
+export interface CreateChatParams {
+  provider: string;
+}
 
 export interface CreateMessageParams {
   chatId: string;
@@ -10,31 +15,12 @@ export interface CreateMessageParams {
   response?: string | null;
 }
 
-export interface CreateEmbeddingParams {
-  messageId: number;
-  vector: Buffer;
-  vectorId: number;
-}
-
-export interface CreateContextParams {
-  messageId: number;
-  sourceId: number;
-  score: number;
-  usedInPrompt: boolean;
-}
-
-export interface CreateChatParams {
-  provider: string;
-}
-
-export class DatabaseService {
-  private prisma: PrismaClient;
-
-  constructor(prismaClient?: PrismaClient) {
-    this.prisma = prismaClient || new PrismaClient();
+export class ChatRepository extends BaseRepository {
+  constructor(prisma: PrismaClient) {
+    super(prisma);
   }
 
-  // Чаты
+  // Chat operations
   async createChat(params: CreateChatParams): Promise<Chat> {
     return this.prisma.chat.create({
       data: params
@@ -54,7 +40,7 @@ export class DatabaseService {
     });
   }
 
-  // Сообщения
+  // Message operations
   async createMessage(params: CreateMessageParams): Promise<Message> {
     return this.prisma.message.create({
       data: params
@@ -82,59 +68,28 @@ export class DatabaseService {
     });
   }
 
-  // Эмбеддинги
-  async createEmbedding(params: CreateEmbeddingParams): Promise<Embedding> {
-    return this.prisma.embedding.create({
-      data: params
-    });
-  }
-
-  async getEmbeddingByMessageId(messageId: number): Promise<Embedding | null> {
-    return this.prisma.embedding.findUnique({
-      where: { messageId }
-    });
-  }
-
-  async getEmbeddingsByVectorIds(vectorIds: number[]): Promise<Embedding[]> {
-    return this.prisma.embedding.findMany({
+  async getMessagesByIds(ids: number[]): Promise<Message[]> {
+    return this.prisma.message.findMany({
       where: {
-        vectorId: {
-          in: vectorIds
+        id: {
+          in: ids
         }
-      },
-      include: {
-        message: true
       }
     });
   }
 
-  // Контекст
-  async createContext(params: CreateContextParams): Promise<Context> {
-    return this.prisma.context.create({
-      data: params
+  async getMessagesWithoutEmbeddings(): Promise<Message[]> {
+    return this.prisma.message.findMany({
+      where: {
+        embedding: null
+      }
     });
   }
 
-  async createManyContexts(contexts: CreateContextParams[]): Promise<void> {
-    await this.prisma.context.createMany({
-      data: contexts
-    });
-  }
-
-  async getContextByMessageId(messageId: number): Promise<Context[]> {
-    return this.prisma.context.findMany({
-      where: { messageId },
-      include: {
-        message: true
-      },
-      orderBy: { score: 'desc' }
-    });
-  }
-
-  // Транзакции
+  // Transaction operations
   async createMessageWithEmbedding(
     messageParams: CreateMessageParams,
-    embeddingParams: Omit<CreateEmbeddingParams, 'messageId'>
+    embeddingParams: { vector: Buffer; vectorId: number }
   ): Promise<Message> {
     return this.prisma.$transaction(async (tx) => {
       // Создаем сообщение
@@ -157,8 +112,8 @@ export class DatabaseService {
 
   async createMessageWithEmbeddingAndContext(
     messageParams: CreateMessageParams,
-    embeddingParams: Omit<CreateEmbeddingParams, 'messageId'>,
-    contextParams: Omit<CreateContextParams, 'messageId'>[]
+    embeddingParams: { vector: Buffer; vectorId: number },
+    contextParams: { sourceId: number; score: number; usedInPrompt: boolean }[]
   ): Promise<Message> {
     return this.prisma.$transaction(async (tx) => {
       // Создаем сообщение
@@ -190,28 +145,4 @@ export class DatabaseService {
       return message;
     });
   }
-
-  /**
-   * Получение сообщений по их идентификаторам
-   */
-  async getMessagesByIds(ids: number[]): Promise<Message[]> {
-    return this.prisma.message.findMany({
-      where: {
-        id: {
-          in: ids
-        }
-      }
-    });
-  }
-
-  /**
-   * Получение сообщений без эмбеддингов
-   */
-  async getMessagesWithoutEmbeddings(): Promise<Message[]> {
-    return this.prisma.message.findMany({
-      where: {
-        embedding: null
-      }
-    });
-  }
-} 
+}

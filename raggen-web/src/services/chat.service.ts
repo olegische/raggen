@@ -1,10 +1,12 @@
 import { GenerationOptions } from '../providers/base.provider';
 import { GENERATION_CONFIG } from '../config/generation';
-import { DatabaseService } from './database';
 import { ContextService } from './context.service';
 import { PromptService } from './prompt.service';
 import { EmbedApiClient } from './embed-api';
 import { ProviderFactory, ProviderType } from '../providers/factory';
+import { ChatRepository } from './repositories/chat.repository';
+import { EmbeddingRepository } from './repositories/embedding.repository';
+import { BaseRepository } from './repositories/base.repository';
 
 export interface SendMessageOptions extends GenerationOptions {
   maxContextMessages?: number;
@@ -13,23 +15,25 @@ export interface SendMessageOptions extends GenerationOptions {
 
 export class ChatService {
   private provider;
-  private database: DatabaseService;
+  private chatRepository: ChatRepository;
+  private embeddingRepository: EmbeddingRepository;
   private contextService: ContextService;
   private promptService: PromptService;
   private providerType: ProviderType;
 
   constructor(
     providerType: ProviderType,
-    database?: DatabaseService,
+    baseRepository?: BaseRepository,
     embedApi?: EmbedApiClient
   ) {
+    const repo = baseRepository || new BaseRepository();
+    const api = embedApi || new EmbedApiClient();
+
     this.providerType = providerType;
     this.provider = ProviderFactory.getProvider(providerType);
-    this.database = database || new DatabaseService();
-    this.contextService = new ContextService(
-      this.database,
-      embedApi || new EmbedApiClient()
-    );
+    this.chatRepository = repo.createRepository(ChatRepository);
+    this.embeddingRepository = repo.createRepository(EmbeddingRepository);
+    this.contextService = new ContextService(repo, api);
     this.promptService = new PromptService();
   }
 
@@ -41,8 +45,8 @@ export class ChatService {
     try {
       // Получаем или создаем чат
       const chat = chatId 
-        ? await this.database.getChat(chatId)
-        : await this.database.createChat({
+        ? await this.chatRepository.getChat(chatId)
+        : await this.chatRepository.createChat({
             provider: this.providerType
           });
 
@@ -51,7 +55,7 @@ export class ChatService {
       }
 
       // Получаем предыдущие сообщения для контекста
-      const previousMessages = await this.database.getMessagesByChat(chat.id);
+      const previousMessages = await this.chatRepository.getMessagesByChat(chat.id);
 
       // Ищем релевантный контекст
       const context = await this.contextService.searchContext(message, {
@@ -93,8 +97,8 @@ export class ChatService {
       // Получаем эмбеддинг
       const embedResponse = await this.contextService.embedApi.embedText(message);
 
-      // Создаем сообщение и эмбеддинг в одной транзакции
-      const savedMessage = await this.database.createMessageWithEmbedding(
+      // Создаем сообщение с эмбеддингом
+      const savedMessage = await this.chatRepository.createMessageWithEmbedding(
         {
           chatId: chat.id,
           message: message,
@@ -128,6 +132,6 @@ export class ChatService {
   }
 
   async getHistory(chatId: string) {
-    return this.database.getMessagesByChat(chatId);
+    return this.chatRepository.getMessagesByChat(chatId);
   }
 }
