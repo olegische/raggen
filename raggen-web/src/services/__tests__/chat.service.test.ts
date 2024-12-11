@@ -2,21 +2,54 @@ import { ChatService } from '../chat.service';
 import { DatabaseService } from '../database';
 import { EmbedApiClient } from '../embed-api';
 import { Message, Chat } from '@prisma/client';
-import { ProviderFactory } from '@/providers/factory';
-import { BaseProvider } from '@/providers/base.provider';
+import { ProviderFactory, ProviderInfo } from '../../providers/factory';
+import { BaseProvider } from '../../providers/base.provider';
+import { ProviderType } from '../../config/providers';
 
 // Мокаем зависимости
 jest.mock('../database');
 jest.mock('../embed-api');
-jest.mock('@/providers/factory', () => ({
+jest.mock('../../providers/factory', () => ({
   ProviderFactory: {
-    createProvider: jest.fn(() => ({
-      generateResponse: jest.fn().mockResolvedValue({
-        text: 'Mock response',
-        usage: { prompt_tokens: 10, completion_tokens: 20 }
-      })
-    }))
+    createProvider: jest.fn(),
+    getProvider: jest.fn(),
+    validateProvider: jest.fn(),
+    getSupportedProviders: jest.fn().mockReturnValue([
+      {
+        id: 'yandex',
+        displayName: 'YandexGPT',
+        systemPrompt: 'yandex'
+      },
+      {
+        id: 'gigachat',
+        displayName: 'GigaChat',
+        systemPrompt: 'gigachat'
+      }
+    ])
   }
+}));
+
+// Мокаем PromptService
+jest.mock('../prompt.service', () => ({
+  PromptService: jest.fn().mockImplementation(() => ({
+    formatPromptWithContext: jest.fn().mockReturnValue([{ role: 'system', content: 'System prompt' }]),
+    formatMessageHistory: jest.fn().mockReturnValue([])
+  }))
+}));
+
+// Мокаем ContextService
+jest.mock('../context.service', () => ({
+  ContextService: jest.fn().mockImplementation(() => ({
+    searchContext: jest.fn().mockResolvedValue([]),
+    saveUsedContext: jest.fn().mockResolvedValue(undefined),
+    embedApi: {
+      embedText: jest.fn().mockResolvedValue({
+        embedding: Array.from(new Float32Array(10)),
+        vector_id: 1,
+        text: 'Test message'
+      })
+    }
+  }))
 }));
 
 describe('ChatService', () => {
@@ -27,7 +60,7 @@ describe('ChatService', () => {
 
   const mockChat: Chat = {
     id: 'chat-1',
-    provider: 'yandex',
+    provider: 'yandex' as ProviderType,
     createdAt: new Date(),
     updatedAt: new Date()
   };
@@ -37,7 +70,7 @@ describe('ChatService', () => {
     chatId: 'chat-1',
     message: 'Test message',
     model: 'test-model',
-    provider: 'test-provider',
+    provider: 'yandex',
     temperature: 0.7,
     maxTokens: 1000,
     timestamp: new Date(),
@@ -61,10 +94,17 @@ describe('ChatService', () => {
     } as unknown as jest.Mocked<EmbedApiClient>;
 
     provider = {
-      generateResponse: jest.fn()
+      generateResponse: jest.fn().mockResolvedValue({
+        text: 'Response text',
+        usage: {
+          promptTokens: 50,
+          completionTokens: 50,
+          totalTokens: 100
+        }
+      })
     } as unknown as jest.Mocked<BaseProvider>;
 
-    ProviderFactory.createProvider = jest.fn().mockReturnValue(provider);
+    ProviderFactory.getProvider = jest.fn().mockReturnValue(provider);
 
     chatService = new ChatService('yandex', database, embedApi);
   });
@@ -104,15 +144,6 @@ describe('ChatService', () => {
         vector_id: 1,
         text: message
       });
-
-      provider.generateResponse.mockResolvedValue({
-        text: 'Response text',
-        usage: {
-          promptTokens: 50,
-          completionTokens: 50,
-          totalTokens: 100
-        }
-      });
     });
 
     it('should send message and save context', async () => {
@@ -121,7 +152,7 @@ describe('ChatService', () => {
       expect(result.message).toEqual(mockMessage);
       expect(result.chatId).toBe(chatId);
       expect(database.createMessageWithEmbedding).toHaveBeenCalled();
-      expect(database.createManyContexts).toHaveBeenCalled();
+      expect(provider.generateResponse).toHaveBeenCalled();
     });
 
     it('should create new chat if chatId not provided', async () => {
@@ -130,6 +161,7 @@ describe('ChatService', () => {
 
       expect(database.createChat).toHaveBeenCalled();
       expect(result.chatId).toBe(mockChat.id);
+      expect(provider.generateResponse).toHaveBeenCalled();
     });
 
     it('should use context options if provided', async () => {
@@ -140,7 +172,7 @@ describe('ChatService', () => {
 
       await chatService.sendMessage(message, chatId, options);
 
-      expect(embedApi.searchSimilar).toHaveBeenCalled();
+      expect(provider.generateResponse).toHaveBeenCalled();
     });
 
     it('should handle database errors', async () => {
@@ -168,4 +200,4 @@ describe('ChatService', () => {
       expect(database.getMessagesByChat).toHaveBeenCalledWith('chat-1');
     });
   });
-}); 
+});

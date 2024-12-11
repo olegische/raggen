@@ -2,13 +2,14 @@ import { BaseProvider } from './base.provider';
 import { YandexGPTProvider } from './yandex/provider';
 import { GigaChatProvider } from './gigachat/provider';
 import { ProviderType, getProviderConfig, PROVIDER_CONFIG } from '../config/providers';
+import { SystemPromptType } from '../config/prompts';
 
 export type { ProviderType };
 
 export interface ProviderInfo {
   id: ProviderType;
   displayName: string;
-  systemPrompt: string;
+  systemPrompt: SystemPromptType;
 }
 
 export class ProviderFactory {
