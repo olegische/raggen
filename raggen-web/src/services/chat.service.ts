@@ -4,8 +4,7 @@ import { DatabaseService } from './database';
 import { ContextService } from './context.service';
 import { PromptService } from './prompt.service';
 import { EmbedApiClient } from './embed-api';
-import { ProviderFactory } from '../providers/factory';
-import { ProviderType, getProviderConfig } from '../config/providers';
+import { ProviderFactory, ProviderType } from '../providers/factory';
 
 export interface SendMessageOptions extends GenerationOptions {
   maxContextMessages?: number;
@@ -25,7 +24,7 @@ export class ChatService {
     embedApi?: EmbedApiClient
   ) {
     this.providerType = providerType;
-    this.provider = ProviderFactory.createProvider(providerType);
+    this.provider = ProviderFactory.getProvider(providerType);
     this.database = database || new DatabaseService();
     this.contextService = new ContextService(
       this.database,
@@ -61,14 +60,19 @@ export class ChatService {
         excludeMessageIds: previousMessages.map(msg => msg.id)
       });
 
-      // Получаем конфигурацию провайдера
-      const providerConfig = getProviderConfig(this.providerType);
+      // Получаем информацию о провайдере из фабрики
+      const providerInfo = ProviderFactory.getSupportedProviders()
+        .find(p => p.id === this.providerType);
+
+      if (!providerInfo) {
+        throw new Error('Provider not found');
+      }
 
       // Форматируем промпт с контекстом
       const promptMessages = this.promptService.formatPromptWithContext(
         message,
         context,
-        providerConfig.systemPrompt,
+        providerInfo.systemPrompt,
         {
           maxContextMessages: options?.maxContextMessages,
           contextScoreThreshold: options?.contextScoreThreshold
