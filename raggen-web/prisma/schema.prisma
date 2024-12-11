@@ -70,7 +70,6 @@ model Document {
   type        String   // Тип файла (txt, md, html)
   size        Int      // Размер файла в байтах
   content     String   // Содержимое файла
-  metadata    String?  // Дополнительные метаданные в формате JSON строки (автор, дата создания файла и т.д.)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
