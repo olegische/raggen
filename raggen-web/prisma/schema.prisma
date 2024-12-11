@@ -42,12 +42,15 @@ model Embedding {
   id          Int      @id @default(autoincrement())
   messageId   Int?     @unique // Связь один-к-одному с сообщением
   message     Message? @relation(fields: [messageId], references: [id])
+  documentId  String?  @unique // Связь один-к-одному с документом
+  document    Document? @relation(fields: [documentId], references: [id])
   vector      Bytes    // Эмбеддинг в бинарном формате (384 * 4 байта)
   vectorId    Int      // ID вектора в FAISS
   createdAt   DateTime @default(now())
 
   @@index([vectorId]) // Индекс для быстрого поиска по ID вектора
   @@index([messageId])
+  @@index([documentId])
 }
 
 model Context {
@@ -55,24 +58,29 @@ model Context {
   messageId   Int      // Сообщение, в котором использован контекст
   message     Message  @relation(fields: [messageId], references: [id])
   sourceId    Int      // ID исходного сообщения, использованного как контекст
+  documentId  String?  // ID документа, если контекст из документа
+  document    Document? @relation(fields: [documentId], references: [id])
   score       Float    // Оценка релевантности (0-1)
   usedInPrompt Boolean // Был ли контекст использован в промпте
   createdAt   DateTime @default(now())
 
   @@index([messageId])
   @@index([sourceId])
+  @@index([documentId])
   @@index([score])
 }
 
 model Document {
-  id          String   @id @default(uuid())
-  name        String   // Имя файла
-  type        String   // Тип файла (txt, md, html)
-  size        Int      // Размер файла в байтах
-  content     String   // Содержимое файла
-  metadata    String?  // Метаданные в формате JSON
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id          String     @id @default(uuid())
+  name        String     // Имя файла
+  type        String     // Тип файла (txt, md, html)
+  size        Int       // Размер файла в байтах
+  content     String     // Содержимое файла
+  metadata    String?    // Метаданные в формате JSON
+  embedding   Embedding? // Эмбеддинг документа
+  contexts    Context[]  // Контексты, использующие этот документ
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 
   @@index([type])
   @@index([createdAt])
