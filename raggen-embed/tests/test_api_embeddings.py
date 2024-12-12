@@ -1,29 +1,14 @@
 import pytest
-from typing import Generator
 from fastapi.testclient import TestClient
 import numpy as np
 from unittest.mock import patch, MagicMock
 
-from main import app
-from api.embeddings import get_embedding_service, get_vector_store, _embedding_service, _vector_store
+from src.main import app
+from src.api.embeddings import get_embedding_service, get_vector_store
 
-@pytest.fixture
-def client() -> Generator:
-    """Test client fixture."""
-    with TestClient(app) as c:
-        yield c
+client = TestClient(app)
 
-@pytest.fixture(autouse=True)
-def reset_global_services():
-    """Reset global services before each test."""
-    global _embedding_service, _vector_store
-    _embedding_service = None
-    _vector_store = None
-    yield
-    _embedding_service = None
-    _vector_store = None
-
-def test_embed_text_with_paragraphs(client):
+def test_embed_text_with_paragraphs():
     """Test embedding generation with paragraph processing."""
     text = (
         "First paragraph with some meaningful content. "
@@ -35,8 +20,8 @@ def test_embed_text_with_paragraphs(client):
     )
     
     # Mock embedding service and vector store
-    with patch('api.embeddings.EmbeddingService') as mock_embed_service, \
-         patch('api.embeddings.FAISSVectorStore') as mock_store:
+    with patch('src.api.embeddings.EmbeddingService') as mock_embed_service, \
+         patch('src.api.embeddings.FAISSVectorStore') as mock_store:
         
         # Setup mock embedding service
         mock_embed = mock_embed_service.return_value
@@ -76,7 +61,7 @@ def test_embed_text_with_paragraphs(client):
         finally:
             app.dependency_overrides.clear()
 
-def test_batch_embed_with_paragraphs(client):
+def test_batch_embed_with_paragraphs():
     """Test batch embedding with paragraph processing."""
     texts = [
         "First text with multiple sentences. Second sentence here. Third sentence.",
@@ -84,8 +69,8 @@ def test_batch_embed_with_paragraphs(client):
     ]
     
     # Mock embedding service and vector store
-    with patch('api.embeddings.EmbeddingService') as mock_embed_service, \
-         patch('api.embeddings.FAISSVectorStore') as mock_store:
+    with patch('src.api.embeddings.EmbeddingService') as mock_embed_service, \
+         patch('src.api.embeddings.FAISSVectorStore') as mock_store:
         
         # Setup mock embedding service
         mock_embed = mock_embed_service.return_value
@@ -127,7 +112,7 @@ def test_batch_embed_with_paragraphs(client):
         finally:
             app.dependency_overrides.clear()
 
-def test_invalid_paragraph_options(client):
+def test_invalid_paragraph_options():
     """Test validation of paragraph options."""
     text = "Sample text for testing."
     
@@ -177,13 +162,13 @@ def test_invalid_paragraph_options(client):
     )
     assert response.status_code == 422
 
-def test_paragraph_processing_disabled(client):
+def test_paragraph_processing_disabled():
     """Test that paragraph processing is properly disabled when not requested."""
     text = "Sample text for testing without paragraph processing."
     
     # Mock embedding service and vector store
-    with patch('api.embeddings.EmbeddingService') as mock_embed_service, \
-         patch('api.embeddings.FAISSVectorStore') as mock_store:
+    with patch('src.api.embeddings.EmbeddingService') as mock_embed_service, \
+         patch('src.api.embeddings.FAISSVectorStore') as mock_store:
         
         # Setup mock embedding service
         mock_embed = mock_embed_service.return_value
