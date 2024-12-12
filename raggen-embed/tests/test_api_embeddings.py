@@ -6,7 +6,7 @@ from unittest.mock import patch, MagicMock
 from main import app
 from api.models import ParagraphOptions
 
-client = TestClient(app)
+client = TestClient(app=app)
 
 def test_embed_text_with_paragraphs():
     """Test embedding generation with paragraph processing."""
