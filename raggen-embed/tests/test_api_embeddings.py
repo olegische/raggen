@@ -8,16 +8,9 @@ from src.api.embeddings import get_embedding_service, get_vector_store
 
 client = TestClient(app)
 
-def test_embed_text_with_paragraphs():
-    """Test embedding generation with paragraph processing."""
-    text = (
-        "First paragraph with some meaningful content. "
-        "Second sentence here. "
-        "Third sentence completes the paragraph. "
-        "Second paragraph starts here with new content. "
-        "More sentences to make it longer. "
-        "Final sentence of the second paragraph."
-    )
+def test_embed_text():
+    """Test embedding generation for a single text."""
+    text = "Sample text for embedding generation"
     
     # Mock embedding service and vector store
     with patch('src.api.embeddings.EmbeddingService') as mock_embed_service, \
@@ -37,19 +30,10 @@ def test_embed_text_with_paragraphs():
         app.dependency_overrides[get_vector_store] = lambda: mock_vs
         
         try:
-            # Test request with paragraph options
+            # Test request
             response = client.post(
                 "/api/v1/embed",
-                json={
-                    "text": text,
-                    "paragraph_options": {
-                        "enabled": True,
-                        "max_length": 200,
-                        "min_length": 50,
-                        "overlap": 20,
-                        "merge_strategy": "weighted"
-                    }
-                }
+                json={"text": text}
             )
             
             assert response.status_code == 200
@@ -58,14 +42,17 @@ def test_embed_text_with_paragraphs():
             assert len(data["embedding"]) == 384
             assert data["vector_id"] == 1
             assert data["text"] == text
+            
+            # Verify embedding service was called correctly
+            mock_embed.get_embedding.assert_called_once_with(text)
         finally:
             app.dependency_overrides.clear()
 
-def test_batch_embed_with_paragraphs():
-    """Test batch embedding with paragraph processing."""
+def test_batch_embed():
+    """Test batch embedding generation."""
     texts = [
-        "First text with multiple sentences. Second sentence here. Third sentence.",
-        "Second text also has structure. More content here. Final part."
+        "First text for embedding",
+        "Second text for embedding"
     ]
     
     # Mock embedding service and vector store
@@ -74,7 +61,7 @@ def test_batch_embed_with_paragraphs():
         
         # Setup mock embedding service
         mock_embed = mock_embed_service.return_value
-        mock_embed.get_embedding.return_value = np.ones(384)
+        mock_embed.get_embeddings.return_value = np.ones((len(texts), 384))
         
         # Setup mock vector store
         mock_vs = mock_store.return_value
@@ -86,19 +73,10 @@ def test_batch_embed_with_paragraphs():
         app.dependency_overrides[get_vector_store] = lambda: mock_vs
         
         try:
-            # Test request with paragraph options
+            # Test request
             response = client.post(
                 "/api/v1/embed/batch",
-                json={
-                    "texts": texts,
-                    "paragraph_options": {
-                        "enabled": True,
-                        "max_length": 200,
-                        "min_length": 50,
-                        "overlap": 20,
-                        "merge_strategy": "mean"
-                    }
-                }
+                json={"texts": texts}
             )
             
             assert response.status_code == 200
@@ -109,62 +87,54 @@ def test_batch_embed_with_paragraphs():
                 assert len(embedding_data["embedding"]) == 384
                 assert embedding_data["vector_id"] == i + 1
                 assert embedding_data["text"] == texts[i]
+            
+            # Verify embedding service was called correctly
+            mock_embed.get_embeddings.assert_called_once_with(texts)
         finally:
             app.dependency_overrides.clear()
 
-def test_invalid_paragraph_options():
-    """Test validation of paragraph options."""
-    text = "Sample text for testing."
-    
-    # Test invalid max_length
+def test_invalid_text():
+    """Test validation of text input."""
+    # Test empty text
     response = client.post(
         "/api/v1/embed",
-        json={
-            "text": text,
-            "paragraph_options": {
-                "enabled": True,
-                "max_length": 50,  # Less than min_length
-                "min_length": 100,
-                "overlap": 20
-            }
-        }
+        json={"text": ""}
     )
-    assert response.status_code == 422
+    assert response.status_code == 400
     
-    # Test invalid overlap
+    # Test text too long
     response = client.post(
         "/api/v1/embed",
-        json={
-            "text": text,
-            "paragraph_options": {
-                "enabled": True,
-                "max_length": 200,
-                "min_length": 50,
-                "overlap": 600  # Greater than max allowed
-            }
-        }
+        json={"text": "x" * 513}  # More than 512 characters
     )
-    assert response.status_code == 422
-    
-    # Test invalid merge strategy
-    response = client.post(
-        "/api/v1/embed",
-        json={
-            "text": text,
-            "paragraph_options": {
-                "enabled": True,
-                "max_length": 200,
-                "min_length": 50,
-                "overlap": 20,
-                "merge_strategy": "invalid"  # Invalid strategy
-            }
-        }
-    )
-    assert response.status_code == 422
+    assert response.status_code == 400
 
-def test_paragraph_processing_disabled():
-    """Test that paragraph processing is properly disabled when not requested."""
-    text = "Sample text for testing without paragraph processing."
+def test_invalid_batch():
+    """Test validation of batch input."""
+    # Test empty texts list
+    response = client.post(
+        "/api/v1/embed/batch",
+        json={"texts": []}
+    )
+    assert response.status_code == 400
+    
+    # Test too many texts
+    response = client.post(
+        "/api/v1/embed/batch",
+        json={"texts": ["text"] * 33}  # More than 32 texts
+    )
+    assert response.status_code == 400
+    
+    # Test text too long in batch
+    response = client.post(
+        "/api/v1/embed/batch",
+        json={"texts": ["x" * 513]}  # Text longer than 512 characters
+    )
+    assert response.status_code == 400
+
+def test_search_similar():
+    """Test similarity search."""
+    query = "Sample query text"
     
     # Mock embedding service and vector store
     with patch('src.api.embeddings.EmbeddingService') as mock_embed_service, \
@@ -176,25 +146,37 @@ def test_paragraph_processing_disabled():
         
         # Setup mock vector store
         mock_vs = mock_store.return_value
-        mock_vs.dimension = 384
-        mock_vs.add_vectors.return_value = [1]
+        mock_vs.search.return_value = (
+            np.array([[0.2, 0.3]]),  # distances
+            np.array([[1, 2]])       # indices
+        )
         
         # Override FastAPI dependencies
         app.dependency_overrides[get_embedding_service] = lambda: mock_embed
         app.dependency_overrides[get_vector_store] = lambda: mock_vs
         
         try:
-            # Test request without paragraph options
+            # Test request
             response = client.post(
-                "/api/v1/embed",
-                json={"text": text}
+                "/api/v1/search",
+                json={
+                    "text": query,
+                    "k": 2
+                }
             )
             
             assert response.status_code == 200
             data = response.json()
-            assert "embedding" in data
+            assert data["query"] == query
+            assert len(data["results"]) == 2
             
-            # Verify that get_embedding was called only once
-            mock_embed.get_embedding.assert_called_once_with(text)
+            # Verify scores are normalized correctly
+            assert data["results"][0]["score"] > data["results"][1]["score"]
+            assert 0 <= data["results"][0]["score"] <= 1
+            assert 0 <= data["results"][1]["score"] <= 1
+            
+            # Verify vector IDs match indices
+            assert data["results"][0]["vector_id"] == 1
+            assert data["results"][1]["vector_id"] == 2
         finally:
             app.dependency_overrides.clear()

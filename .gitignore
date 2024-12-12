@@ -71,3 +71,5 @@ data/faiss/
 data/sqlite/
 *.faiss
 raggen-embed/data/
+.aider*
+.env
