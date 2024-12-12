@@ -245,7 +245,7 @@ async def get_supported_types() -> JSONResponse:
     return JSONResponse(
         content={
             "supported_types": list(SUPPORTED_EXTENSIONS),
-            "max_file_size_mb": MAX_FILE_SIZE_MB,
+            "max_file_size_mb": float(MAX_FILE_SIZE_MB),  # Convert to float
             "processing_strategies": [s.value for s in ProcessingStrategy]
         }
     )

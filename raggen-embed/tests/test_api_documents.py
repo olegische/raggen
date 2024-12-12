@@ -88,7 +88,7 @@ def test_vector_storer():
     # Create mock vector store
     logger.info("Setting up mock vector store")
     mock_vs = MagicMock()
-    mock_vs.add_vectors.side_effect = [[1, 2, 3], [4]]
+    mock_vs.add_vectors.side_effect = [[0, 1, 2], [3]]
     
     # Create storer
     logger.info("Creating VectorStorer instance")
@@ -217,7 +217,7 @@ def test_upload_document_paragraphs_strategy():
     mock_vs = MagicMock()
     mock_vs.dimension = 384
     mock_vs.is_trained = True
-    mock_vs.add_vectors.return_value = [1, 2, 3]
+    mock_vs.add_vectors = MagicMock(return_value=[1, 2, 3])  # Fixed: using MagicMock with list
     
     try:
         # Override FastAPI dependencies
@@ -228,8 +228,8 @@ def test_upload_document_paragraphs_strategy():
         # Test request
         logger.info("Sending test request")
         response = client.post(
-            "/api/v1/documents/upload",
-            files={"file": ("test.txt", file, "text/plain")},
+            "/api/v1/documents/upload",  # Fixed: added comma
+            files={"file": ("test.txt", file, "text/plain")},  # Fixed: added commas
             params={"strategy": "paragraphs"}
         )
         

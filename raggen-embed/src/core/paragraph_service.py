@@ -90,7 +90,7 @@ class ParagraphService:
         
         return result
     
-    def get_embeddings(self, text: str) -> List[np.ndarray]:
+    def get_embeddings(self, text: str) -> np.ndarray:
         """
         Get embeddings for each paragraph in the text.
         
@@ -98,7 +98,7 @@ class ParagraphService:
             text: Text to process
             
         Returns:
-            List of embedding vectors for each paragraph
+            Array of embedding vectors for each paragraph
             
         Raises:
             ValueError: If text is empty or too short
@@ -110,14 +110,15 @@ class ParagraphService:
         if not paragraphs:
             raise ValueError("Text is too short")
             
-        return [self.embedding_service.get_embedding(p) for p in paragraphs]
+        embeddings = [self.embedding_service.get_embedding(p) for p in paragraphs]
+        return np.stack(embeddings)
     
-    def merge_embeddings(self, embeddings: List[np.ndarray], strategy: str = "mean") -> np.ndarray:
+    def merge_embeddings(self, embeddings: np.ndarray, strategy: str = "mean") -> np.ndarray:
         """
         Merge multiple embeddings into one using the specified strategy.
         
         Args:
-            embeddings: List of embedding vectors to merge
+            embeddings: Array of embedding vectors to merge
             strategy: Strategy to use for merging ("mean" or "weighted")
             
         Returns:
@@ -126,7 +127,7 @@ class ParagraphService:
         Raises:
             ValueError: If strategy is unknown
         """
-        if not embeddings:
+        if len(embeddings) == 0:
             raise ValueError("No embeddings provided")
             
         if strategy == "mean":

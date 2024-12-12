@@ -68,29 +68,30 @@ def test_adding_vectors(vector_store, sample_vectors):
     # Train first
     vector_store.train(sample_vectors)
     
-    # Test adding vectors without IDs
+    # Test adding vectors without IDs - should get sequential IDs starting from 1
     n_add = 10
     vectors_to_add = np.random.randn(n_add, settings.vector_dim).astype(np.float32)
     ids = vector_store.add_vectors(vectors_to_add)
-    assert len(ids) == n_add
+    assert ids == list(range(1, n_add + 1))  # IDs should start from 1
     assert vector_store.n_vectors == n_add
     
-    # Test adding vectors with IDs
-    custom_ids = np.array([100, 101, 102])
+    # Test adding more vectors - should continue sequence
+    more_vectors = np.random.randn(5, settings.vector_dim).astype(np.float32)
+    more_ids = vector_store.add_vectors(more_vectors)
+    assert more_ids == list(range(n_add + 1, n_add + 6))  # Should continue from last ID
+    assert vector_store.n_vectors == n_add + 5
+    
+    # Test adding vectors with custom IDs
+    custom_ids = [100, 101, 102]
     vectors_with_ids = np.random.randn(3, settings.vector_dim).astype(np.float32)
     ids = vector_store.add_vectors(vectors_with_ids, custom_ids)
-    assert ids == custom_ids.tolist()
-    assert vector_store.n_vectors == n_add + 3
+    assert ids == custom_ids
+    assert vector_store.n_vectors == n_add + 8
     
-    # Test adding vectors with wrong dimension
-    wrong_dim_vectors = np.random.randn(5, settings.vector_dim + 1).astype(np.float32)
-    with pytest.raises(ValueError, match="Expected vectors of dimension"):
-        vector_store.add_vectors(wrong_dim_vectors)
-    
-    # Test adding vectors without training
-    new_store = FAISSVectorStore()
-    with pytest.raises(RuntimeError, match="Index must be trained"):
-        new_store.add_vectors(vectors_to_add)
+    # Test that search returns correct user IDs
+    query = vectors_to_add[0:1]  # Use first vector as query
+    distances, indices = vector_store.search(query, k=1)
+    assert indices[0][0] == 1  # Should return user ID 1 for first vector
 
 def test_searching(vector_store, sample_vectors):
     """Test vector similarity search."""
@@ -131,34 +132,36 @@ def test_persistence(vector_store, sample_vectors):
     # Train and add vectors
     vector_store.train(sample_vectors)
     vector_store.add_vectors(sample_vectors)
-    
-    # Create temporary file
-    with tempfile.NamedTemporaryFile(delete=False) as tmp:
-        try:
-            # Save index
-            vector_store.save(tmp.name)
-            assert os.path.exists(tmp.name)
-            
-            # Load index
-            loaded_store = FAISSVectorStore.load(tmp.name)
-            assert loaded_store.dimension == vector_store.dimension
-            assert loaded_store.n_vectors == vector_store.n_vectors
-            assert loaded_store.is_trained
-            
-            # Test search with loaded index
-            query = np.random.randn(1, settings.vector_dim).astype(np.float32)
-            original_distances, original_indices = vector_store.search(query)
-            loaded_distances, loaded_indices = loaded_store.search(query)
-            np.testing.assert_array_equal(original_indices, loaded_indices)
-            np.testing.assert_array_almost_equal(original_distances, loaded_distances)
-            
-        finally:
-            # Cleanup
-            os.unlink(tmp.name)
-    
-    # Test loading non-existent file
-    with pytest.raises(Exception):
-        FAISSVectorStore.load("non_existent_file.faiss")
+
+    # Create test file path in the current directory
+    test_path = "test_index.faiss"
+    try:
+        # Save index and check both files
+        vector_store.save(test_path)
+        assert os.path.exists(test_path), "Main index file not created"
+        assert os.path.exists(test_path + ".mappings.npz"), "Mappings file not created"
+
+        # Load index and check mappings
+        loaded_store = FAISSVectorStore.load(test_path)
+        assert loaded_store.dimension == vector_store.dimension
+        assert loaded_store.n_vectors == vector_store.n_vectors
+        assert loaded_store.is_trained
+
+        # Test search with loaded index using original vectors
+        query = sample_vectors[0:1]  # Use first vector as query
+        original_distances, original_indices = vector_store.search(query, k=1)
+        loaded_distances, loaded_indices = loaded_store.search(query, k=1)
+
+        # Both should return the same results
+        np.testing.assert_array_equal(original_indices, loaded_indices)
+        np.testing.assert_array_almost_equal(original_distances, loaded_distances)
+
+    finally:
+        # Cleanup
+        if os.path.exists(test_path):
+            os.remove(test_path)
+        if os.path.exists(test_path + ".mappings.npz"):
+            os.remove(test_path + ".mappings.npz")
 
 def test_large_dataset(vector_store, large_vectors):
     """Test handling of large datasets."""

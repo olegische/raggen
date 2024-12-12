@@ -1,5 +1,5 @@
 import os
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict
 import time
 
 import numpy as np
@@ -31,6 +31,11 @@ class FAISSVectorStore:
         self.n_vectors = 0
         self.is_trained = False  # Even though FlatL2 doesn't need training, we keep this for consistency
         
+        # Track user-facing IDs
+        self.next_user_id = 1  # Start user IDs from 1
+        self.internal_to_user_ids: Dict[int, int] = {}  # Map internal FAISS IDs to user IDs
+        self.user_to_internal_ids: Dict[int, int] = {}  # Map user IDs to internal FAISS IDs
+        
         logger.info("FAISS index created successfully")
     
     def train(self, vectors: np.ndarray) -> None:
@@ -52,16 +57,36 @@ class FAISSVectorStore:
         self.is_trained = True
         logger.info("Index trained successfully")
     
-    def add_vectors(self, vectors: np.ndarray, ids: Optional[np.ndarray] = None) -> List[int]:
+    def _get_next_user_ids(self, count: int) -> List[int]:
+        """Get next available user IDs."""
+        user_ids = list(range(self.next_user_id, self.next_user_id + count))
+        self.next_user_id += count
+        return user_ids
+    
+    def _map_internal_to_user_ids(self, internal_ids: np.ndarray) -> np.ndarray:
+        """Map internal FAISS IDs to user-facing IDs."""
+        # Handle 2D array from FAISS search results
+        result = np.zeros_like(internal_ids)
+        for i in range(internal_ids.shape[0]):
+            for j in range(internal_ids.shape[1]):
+                internal_id = int(internal_ids[i, j])
+                result[i, j] = self.internal_to_user_ids.get(internal_id, internal_id + 1)
+        return result
+    
+    def _map_user_to_internal_ids(self, user_ids: List[int]) -> List[int]:
+        """Map user-facing IDs to internal FAISS IDs."""
+        return [self.user_to_internal_ids.get(i, -1) for i in user_ids]
+    
+    def add_vectors(self, vectors: np.ndarray, ids: Optional[List[int]] = None) -> List[int]:
         """
         Add vectors to the index.
         
         Args:
             vectors: Vectors to add (n_vectors, dimension)
-            ids: Optional vector IDs (n_vectors,)
+            ids: Optional user-provided vector IDs (n_vectors,)
             
         Returns:
-            List of assigned vector IDs
+            List of assigned vector IDs (user-facing)
         """
         if not self.is_trained:
             raise RuntimeError("Index must be trained before adding vectors")
@@ -73,16 +98,30 @@ class FAISSVectorStore:
         start_time = time.time()
         
         try:
+            # Generate or validate user IDs
             if ids is None:
-                # Generate sequential IDs
-                ids = np.arange(self.n_vectors, self.n_vectors + len(vectors))
+                user_ids = self._get_next_user_ids(len(vectors))
+            else:
+                if len(ids) != len(vectors):
+                    raise ValueError("Number of IDs must match number of vectors")
+                user_ids = ids
             
+            # Get internal IDs that will be assigned by FAISS
+            internal_ids = list(range(self.n_vectors, self.n_vectors + len(vectors)))
+            
+            # Update ID mappings
+            for internal_id, user_id in zip(internal_ids, user_ids):
+                self.internal_to_user_ids[internal_id] = user_id
+                self.user_to_internal_ids[user_id] = internal_id
+            
+            # Add vectors to FAISS index
             self.index.add(vectors)
             self.n_vectors += len(vectors)
+            
             add_time = time.time() - start_time
             logger.info("Vectors added successfully in %.2f seconds", add_time)
             
-            return ids.tolist()
+            return user_ids
         except Exception as e:
             logger.error("Failed to add vectors: %s", str(e))
             raise
@@ -96,7 +135,7 @@ class FAISSVectorStore:
             k: Number of results to return per query
             
         Returns:
-            Tuple of (distances, indices)
+            Tuple of (distances, user_facing_indices)
         """
         if not self.is_trained:
             raise RuntimeError("Index must be trained before searching")
@@ -113,11 +152,16 @@ class FAISSVectorStore:
             
         try:
             if self.n_vectors == 0:
-                # Если нет векторов, возвращаем пустые массивы
+                # If no vectors, return empty arrays
                 return np.array([]).reshape(query_vectors.shape[0], 0), np.array([]).reshape(query_vectors.shape[0], 0)
             
-            distances, indices = self.index.search(query_vectors, k)
-            return distances, indices
+            # Get internal FAISS results
+            distances, internal_indices = self.index.search(query_vectors, k)
+            
+            # Map internal indices to user-facing IDs
+            user_indices = self._map_internal_to_user_ids(internal_indices)
+            
+            return distances, user_indices
         except Exception as e:
             logger.error("Failed to search vectors: %s", str(e))
             raise
@@ -134,10 +178,60 @@ class FAISSVectorStore:
         
         try:
             # Create directory if it doesn't exist
-            os.makedirs(os.path.dirname(path), exist_ok=True)
+            directory = os.path.dirname(path)
+            if directory:
+                os.makedirs(directory, exist_ok=True)
             
             # Save the index
             faiss.write_index(self.index, path)
+            
+            # Save ID mappings
+            mappings_path = path + ".mappings"
+            try:
+                # Log current state
+                logger.info("Current mappings state:")
+                logger.info("next_user_id: %d", self.next_user_id)
+                logger.info("internal_to_user_ids: %s", dict(self.internal_to_user_ids))
+                logger.info("user_to_internal_ids: %s", dict(self.user_to_internal_ids))
+                
+                # Convert dictionaries to arrays
+                internal_to_user = np.array([(k, v) for k, v in self.internal_to_user_ids.items()],
+                                         dtype=[('key', 'i4'), ('value', 'i4')])
+                user_to_internal = np.array([(k, v) for k, v in self.user_to_internal_ids.items()],
+                                         dtype=[('key', 'i4'), ('value', 'i4')])
+                
+                # Prepare data for saving
+                mappings_data = {
+                    'next_user_id': np.array([self.next_user_id], dtype=np.int32),
+                    'internal_to_user': internal_to_user,
+                    'user_to_internal': user_to_internal
+                }
+                
+                # Log data being saved
+                logger.info("Saving mappings data: %s", mappings_data)
+                logger.info("Saving to path: %s", mappings_path)
+                
+                # Save mappings
+                np.savez(mappings_path, **mappings_data)
+                
+                # Wait for file system
+                time.sleep(0.1)
+                
+                # Check if file exists (with .npz extension) and log its properties
+                npz_path = mappings_path + '.npz'
+                if os.path.exists(npz_path):
+                    logger.info("Mappings file created successfully")
+                    logger.info("File size: %d bytes", os.path.getsize(npz_path))
+                else:
+                    logger.error("Mappings file not found after saving")
+                    # Use '.' for current directory if dirname is empty
+                    dir_path = os.path.dirname(path) or '.'
+                    logger.error("Directory contents: %s", os.listdir(dir_path))
+                    raise RuntimeError(f"Failed to create mappings file: {npz_path}")
+                
+            except Exception as e:
+                logger.error("Failed to save mappings: %s", str(e))
+                raise
             
             save_time = time.time() - start_time
             logger.info("Index saved successfully in %.2f seconds", save_time)
@@ -168,6 +262,36 @@ class FAISSVectorStore:
             instance.dimension = instance.index.d
             instance.n_vectors = instance.index.ntotal
             instance.is_trained = True
+            
+            # Load ID mappings
+            mappings_path = path + ".mappings.npz"  # Add .npz extension here
+            if os.path.exists(mappings_path):
+                logger.info("Loading mappings from %s", mappings_path)
+                try:
+                    mappings = np.load(mappings_path, allow_pickle=True)
+                    
+                    # Load next_user_id
+                    instance.next_user_id = int(mappings["next_user_id"][0])
+                    
+                    # Load mappings from structured arrays
+                    internal_to_user = mappings["internal_to_user"]
+                    user_to_internal = mappings["user_to_internal"]
+                    
+                    # Convert structured arrays to dictionaries
+                    instance.internal_to_user_ids = {int(x["key"]): int(x["value"])
+                                                   for x in internal_to_user}
+                    instance.user_to_internal_ids = {int(x["key"]): int(x["value"])
+                                                   for x in user_to_internal}
+                    
+                    logger.info("Loaded mappings: next_user_id=%d, mappings=%s",
+                              instance.next_user_id, instance.internal_to_user_ids)
+                except Exception as e:
+                    logger.error("Failed to load mappings: %s", str(e))
+                    logger.warning("Falling back to default sequential IDs")
+                    instance._init_default_mappings()
+            else:
+                logger.warning("No mappings file found at %s, using default sequential IDs", mappings_path)
+                instance._init_default_mappings()
             
             load_time = time.time() - start_time
             logger.info("Index loaded successfully in %.2f seconds", load_time)
