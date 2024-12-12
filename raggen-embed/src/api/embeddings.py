@@ -71,8 +71,33 @@ async def embed_text(
 ) -> EmbeddingResponse:
     """Generate embedding for a single text and store it in the vector store."""
     try:
-        # Generate embedding
-        embedding = embedding_service.get_embedding(request.text)
+        # Configure paragraph processing if requested
+        use_paragraphs = False
+        if request.paragraph_options and request.paragraph_options.enabled:
+            use_paragraphs = True
+            # Update embedding service settings if custom options provided
+            if any([
+                request.paragraph_options.max_length,
+                request.paragraph_options.min_length,
+                request.paragraph_options.overlap,
+                request.paragraph_options.preserve_sentences is not None,
+                request.paragraph_options.merge_strategy
+            ]):
+                embedding_service._paragraph_processor = ParagraphProcessor(
+                    ParagraphConfig(
+                        max_length=request.paragraph_options.max_length or settings.paragraph_max_length,
+                        min_length=request.paragraph_options.min_length or settings.paragraph_min_length,
+                        overlap=request.paragraph_options.overlap or settings.paragraph_overlap,
+                        preserve_sentences=request.paragraph_options.preserve_sentences
+                            if request.paragraph_options.preserve_sentences is not None
+                            else settings.preserve_sentences
+                    )
+                )
+                if request.paragraph_options.merge_strategy:
+                    settings.embedding_merge_strategy = request.paragraph_options.merge_strategy
+
+        # Generate embedding with paragraph processing if enabled
+        embedding = embedding_service.get_embedding(request.text, use_paragraphs=use_paragraphs)
         
         # Store embedding in vector store
         vector_id = vector_store.add_vectors(np.expand_dims(embedding, 0))[0]
@@ -123,8 +148,33 @@ async def embed_texts(
 ) -> BatchEmbeddingResponse:
     """Generate embeddings for multiple texts and store them in the vector store."""
     try:
-        # Generate embeddings
-        embeddings = embedding_service.get_embeddings(request.texts)
+        # Configure paragraph processing if requested
+        use_paragraphs = False
+        if request.paragraph_options and request.paragraph_options.enabled:
+            use_paragraphs = True
+            # Update embedding service settings if custom options provided
+            if any([
+                request.paragraph_options.max_length,
+                request.paragraph_options.min_length,
+                request.paragraph_options.overlap,
+                request.paragraph_options.preserve_sentences is not None,
+                request.paragraph_options.merge_strategy
+            ]):
+                embedding_service._paragraph_processor = ParagraphProcessor(
+                    ParagraphConfig(
+                        max_length=request.paragraph_options.max_length or settings.paragraph_max_length,
+                        min_length=request.paragraph_options.min_length or settings.paragraph_min_length,
+                        overlap=request.paragraph_options.overlap or settings.paragraph_overlap,
+                        preserve_sentences=request.paragraph_options.preserve_sentences
+                            if request.paragraph_options.preserve_sentences is not None
+                            else settings.preserve_sentences
+                    )
+                )
+                if request.paragraph_options.merge_strategy:
+                    settings.embedding_merge_strategy = request.paragraph_options.merge_strategy
+
+        # Generate embeddings with paragraph processing if enabled
+        embeddings = embedding_service.get_embeddings(request.texts, use_paragraphs=use_paragraphs)
         
         # Store embeddings in vector store
         vector_ids = vector_store.add_vectors(embeddings)

@@ -125,3 +125,35 @@ class Settings(BaseSettings):
         description="Path to save/load FAISS index",
         env="FAISS_INDEX_PATH"
     )
+    
+    # Paragraph processing settings
+    paragraph_max_length: int = Field(
+        default=1000,
+        description="Maximum length of a paragraph",
+        env="PARAGRAPH_MAX_LENGTH"
+    )
+    paragraph_min_length: int = Field(
+        default=100,
+        description="Minimum length of a paragraph",
+        env="PARAGRAPH_MIN_LENGTH"
+    )
+    paragraph_overlap: int = Field(
+        default=100,
+        description="Number of characters to overlap between paragraphs",
+        env="PARAGRAPH_OVERLAP"
+    )
+    preserve_sentences: bool = Field(
+        default=True,
+        description="Whether to preserve sentence boundaries when splitting paragraphs",
+        env="PRESERVE_SENTENCES"
+    )
+    context_window_size: int = Field(
+        default=200,
+        description="Size of context window before and after paragraph",
+        env="CONTEXT_WINDOW_SIZE"
+    )
+    embedding_merge_strategy: str = Field(
+        default="mean",
+        description="Strategy for merging paragraph embeddings (mean or weighted)",
+        env="EMBEDDING_MERGE_STRATEGY"
+    )
