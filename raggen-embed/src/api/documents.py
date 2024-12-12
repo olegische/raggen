@@ -5,7 +5,8 @@ from fastapi.responses import JSONResponse
 from bs4 import BeautifulSoup
 import markdown
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
+import numpy as np
 
 from core.paragraph_service import ParagraphService
 from core.vector_store.faiss_store import FAISSVectorStore
@@ -14,8 +15,15 @@ from core.embeddings import EmbeddingService
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+# File size limits
+MAX_FILE_SIZE_MB = 10
+MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024  # Convert MB to bytes
+
+# Supported file types
 SUPPORTED_EXTENSIONS = {'.txt', '.md', '.html'}
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
+# Global vector store instance
+_vector_store = None
 
 class ProcessingStrategy(str, Enum):
     """Enum for document processing strategies."""
@@ -23,11 +31,41 @@ class ProcessingStrategy(str, Enum):
     MERGED = "merged"          # Split into paragraphs, merge embeddings, save as one
     COMBINED = "combined"      # Do both above strategies
 
-class DocumentProcessor(ABC):
+class TextProcessor:
+    """Base class for text processing operations."""
+    
+    def __init__(self, paragraph_service: ParagraphService):
+        self.paragraph_service = paragraph_service
+    
+    def process_text(self, text: str) -> Tuple[List[str], np.ndarray]:
+        """Process text into paragraphs and embeddings."""
+        paragraphs = self.paragraph_service.split_text(text)
+        embeddings = self.paragraph_service.get_embeddings(text)
+        return paragraphs, embeddings
+
+class EmbeddingMerger:
+    """Mixin for merging embeddings."""
+    
+    def merge_embeddings(self, paragraph_service: ParagraphService, embeddings: np.ndarray) -> np.ndarray:
+        """Merge multiple embeddings into one."""
+        return paragraph_service.merge_embeddings(embeddings)
+
+class VectorStorer:
+    """Mixin for vector storage operations."""
+    
+    def store_vectors(self, vector_store: FAISSVectorStore, vectors: np.ndarray) -> List[int]:
+        """Store vectors and return their IDs."""
+        return vector_store.add_vectors(vectors)
+    
+    def store_single_vector(self, vector_store: FAISSVectorStore, vector: np.ndarray) -> int:
+        """Store a single vector and return its ID."""
+        return vector_store.add_vectors([vector])[0]
+
+class DocumentProcessor(ABC, TextProcessor):
     """Abstract base class for document processing strategies."""
     
     def __init__(self, paragraph_service: ParagraphService, vector_store: FAISSVectorStore):
-        self.paragraph_service = paragraph_service
+        super().__init__(paragraph_service)
         self.vector_store = vector_store
     
     @abstractmethod
@@ -35,16 +73,15 @@ class DocumentProcessor(ABC):
         """Process document text and return results."""
         pass
 
-class ParagraphEmbeddingStrategy(DocumentProcessor):
+class ParagraphEmbeddingStrategy(DocumentProcessor, VectorStorer):
     """Strategy for processing document into paragraph embeddings."""
     
     def process(self, text: str) -> Dict[str, Any]:
-        # Split text into paragraphs and get embeddings
-        paragraphs = self.paragraph_service.split_text(text)
-        embeddings = self.paragraph_service.get_embeddings(text)
+        # Process text into paragraphs and embeddings
+        paragraphs, embeddings = self.process_text(text)
         
         # Store embeddings in vector store
-        vector_ids = self.vector_store.add_vectors(embeddings)
+        vector_ids = self.store_vectors(self.vector_store, embeddings)
         
         return {
             "strategy": "paragraphs",
@@ -53,19 +90,16 @@ class ParagraphEmbeddingStrategy(DocumentProcessor):
             "paragraphs": paragraphs
         }
 
-class MergedEmbeddingStrategy(DocumentProcessor):
+class MergedEmbeddingStrategy(DocumentProcessor, EmbeddingMerger, VectorStorer):
     """Strategy for processing document into a single merged embedding."""
     
     def process(self, text: str) -> Dict[str, Any]:
-        # Split text into paragraphs and get embeddings
-        paragraphs = self.paragraph_service.split_text(text)
-        embeddings = self.paragraph_service.get_embeddings(text)
+        # Process text into paragraphs and embeddings
+        paragraphs, embeddings = self.process_text(text)
         
-        # Merge embeddings
-        merged_embedding = self.paragraph_service.merge_embeddings(embeddings)
-        
-        # Store merged embedding
-        vector_id = self.vector_store.add_vectors([merged_embedding])[0]
+        # Merge embeddings and store
+        merged_embedding = self.merge_embeddings(self.paragraph_service, embeddings)
+        vector_id = self.store_single_vector(self.vector_store, merged_embedding)
         
         return {
             "strategy": "merged",
@@ -74,20 +108,19 @@ class MergedEmbeddingStrategy(DocumentProcessor):
             "paragraphs": paragraphs
         }
 
-class CombinedEmbeddingStrategy(DocumentProcessor):
+class CombinedEmbeddingStrategy(DocumentProcessor, EmbeddingMerger, VectorStorer):
     """Strategy that combines both paragraph and merged embeddings."""
     
     def process(self, text: str) -> Dict[str, Any]:
-        # Split text into paragraphs and get embeddings
-        paragraphs = self.paragraph_service.split_text(text)
-        embeddings = self.paragraph_service.get_embeddings(text)
+        # Process text into paragraphs and embeddings
+        paragraphs, embeddings = self.process_text(text)
         
         # Store individual paragraph embeddings
-        paragraph_vector_ids = self.vector_store.add_vectors(embeddings)
+        paragraph_vector_ids = self.store_vectors(self.vector_store, embeddings)
         
         # Merge embeddings and store
-        merged_embedding = self.paragraph_service.merge_embeddings(embeddings)
-        merged_vector_id = self.vector_store.add_vectors([merged_embedding])[0]
+        merged_embedding = self.merge_embeddings(self.paragraph_service, embeddings)
+        merged_vector_id = self.store_single_vector(self.vector_store, merged_embedding)
         
         return {
             "strategy": "combined",
@@ -103,7 +136,12 @@ def get_paragraph_service() -> ParagraphService:
 
 def get_vector_store() -> FAISSVectorStore:
     """Get or create vector store instance."""
-    return FAISSVectorStore()
+    global _vector_store
+    if _vector_store is None:
+        _vector_store = FAISSVectorStore()
+        # Train the empty index immediately
+        _vector_store.train(np.zeros((1, _vector_store.dimension), dtype=np.float32))
+    return _vector_store
 
 def get_processor(
     strategy: ProcessingStrategy,
@@ -117,6 +155,19 @@ def get_processor(
         ProcessingStrategy.COMBINED: CombinedEmbeddingStrategy
     }
     return processors[strategy](paragraph_service, vector_store)
+
+def process_file_content(content: bytes, file_ext: str) -> str:
+    """Process file content based on file type."""
+    if file_ext == '.html':
+        soup = BeautifulSoup(content, 'html.parser')
+        return soup.get_text(separator='\n', strip=True)
+    elif file_ext == '.md':
+        # Convert markdown to HTML first, then extract text
+        html = markdown.markdown(content.decode())
+        soup = BeautifulSoup(html, 'html.parser')
+        return soup.get_text(separator='\n', strip=True)
+    else:  # .txt
+        return content.decode()
 
 @router.post("/documents/upload")
 async def upload_document(
@@ -151,21 +202,11 @@ async def upload_document(
         if len(content) > MAX_FILE_SIZE:
             raise HTTPException(
                 status_code=400,
-                detail=f"File too large. Maximum size: {MAX_FILE_SIZE/1024/1024}MB"
+                detail=f"File too large. Maximum size: {MAX_FILE_SIZE_MB}MB"
             )
 
         # Process content based on file type
-        processed_content = ""
-        if file_ext == '.html':
-            soup = BeautifulSoup(content, 'html.parser')
-            processed_content = soup.get_text(separator='\n', strip=True)
-        elif file_ext == '.md':
-            # Convert markdown to HTML first, then extract text
-            html = markdown.markdown(content.decode())
-            soup = BeautifulSoup(html, 'html.parser')
-            processed_content = soup.get_text(separator='\n', strip=True)
-        else:  # .txt
-            processed_content = content.decode()
+        processed_content = process_file_content(content, file_ext)
 
         try:
             # Get appropriate processor and process document
@@ -204,7 +245,7 @@ async def get_supported_types() -> JSONResponse:
     return JSONResponse(
         content={
             "supported_types": list(SUPPORTED_EXTENSIONS),
-            "max_file_size_mb": MAX_FILE_SIZE/1024/1024,
+            "max_file_size_mb": MAX_FILE_SIZE_MB,
             "processing_strategies": [s.value for s in ProcessingStrategy]
         }
     )
