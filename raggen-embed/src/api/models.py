@@ -227,10 +227,6 @@ class ParagraphOptions(BaseModel):
         le=500,
         description="Number of characters to overlap between paragraphs (0-500 characters)"
     )
-    preserve_sentences: Optional[bool] = Field(
-        default=None,
-        description="Whether to preserve sentence boundaries when splitting paragraphs"
-    )
     merge_strategy: Optional[str] = Field(
         default=None,
         description="Strategy for merging paragraph embeddings (mean or weighted)"
@@ -249,9 +245,8 @@ class ParagraphOptions(BaseModel):
                 "enabled": True,
                 "max_length": 1000,
                 "min_length": 100,
-                "overlap": 100,
-                "preserve_sentences": True,
-                "merge_strategy": "mean"
+                "overlap": 50,
+                "merge_strategy": "weighted"
             }
         }
 
@@ -264,9 +259,8 @@ TextRequest.model_config["json_schema_extra"]["example"]["paragraph_options"] = 
     "enabled": True,
     "max_length": 1000,
     "min_length": 100,
-    "overlap": 100,
-    "preserve_sentences": True,
-    "merge_strategy": "mean"
+    "overlap": 50,
+    "merge_strategy": "weighted"
 }
 
 # Update BatchTextRequest to include paragraph options
@@ -278,7 +272,6 @@ BatchTextRequest.model_config["json_schema_extra"]["example"]["paragraph_options
     "enabled": True,
     "max_length": 1000,
     "min_length": 100,
-    "overlap": 100,
-    "preserve_sentences": True,
-    "merge_strategy": "mean"
+    "overlap": 50,
+    "merge_strategy": "weighted"
 }

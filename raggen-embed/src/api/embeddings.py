@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, Depends
 import numpy as np
 
 from core.embeddings import EmbeddingService
+from core.paragraph_service import ParagraphService
 from core.vector_store.faiss_store import FAISSVectorStore
 from api.models import (
     TextRequest,
@@ -72,32 +73,26 @@ async def embed_text(
     """Generate embedding for a single text and store it in the vector store."""
     try:
         # Configure paragraph processing if requested
-        use_paragraphs = False
         if request.paragraph_options and request.paragraph_options.enabled:
-            use_paragraphs = True
-            # Update embedding service settings if custom options provided
-            if any([
-                request.paragraph_options.max_length,
-                request.paragraph_options.min_length,
-                request.paragraph_options.overlap,
-                request.paragraph_options.preserve_sentences is not None,
-                request.paragraph_options.merge_strategy
-            ]):
-                embedding_service._paragraph_processor = ParagraphProcessor(
-                    ParagraphConfig(
-                        max_length=request.paragraph_options.max_length or settings.paragraph_max_length,
-                        min_length=request.paragraph_options.min_length or settings.paragraph_min_length,
-                        overlap=request.paragraph_options.overlap or settings.paragraph_overlap,
-                        preserve_sentences=request.paragraph_options.preserve_sentences
-                            if request.paragraph_options.preserve_sentences is not None
-                            else settings.preserve_sentences
-                    )
-                )
-                if request.paragraph_options.merge_strategy:
-                    settings.embedding_merge_strategy = request.paragraph_options.merge_strategy
-
-        # Generate embedding with paragraph processing if enabled
-        embedding = embedding_service.get_embedding(request.text, use_paragraphs=use_paragraphs)
+            # Create ParagraphService with custom options if provided
+            paragraph_service = ParagraphService(
+                min_length=request.paragraph_options.min_length or 100,
+                max_length=request.paragraph_options.max_length or 1000,
+                overlap=request.paragraph_options.overlap or 50
+            )
+            
+            # Split text into paragraphs and get embeddings
+            paragraphs = paragraph_service.split_text(request.text)
+            paragraph_embeddings = [embedding_service.get_embedding(p) for p in paragraphs]
+            
+            # Merge embeddings using specified strategy
+            embedding = paragraph_service.merge_embeddings(
+                paragraph_embeddings,
+                strategy=request.paragraph_options.merge_strategy or "mean"
+            )
+        else:
+            # Generate single embedding without paragraph processing
+            embedding = embedding_service.get_embedding(request.text)
         
         # Store embedding in vector store
         vector_id = vector_store.add_vectors(np.expand_dims(embedding, 0))[0]
@@ -148,44 +143,42 @@ async def embed_texts(
 ) -> BatchEmbeddingResponse:
     """Generate embeddings for multiple texts and store them in the vector store."""
     try:
+        embeddings = []
+        
         # Configure paragraph processing if requested
-        use_paragraphs = False
         if request.paragraph_options and request.paragraph_options.enabled:
-            use_paragraphs = True
-            # Update embedding service settings if custom options provided
-            if any([
-                request.paragraph_options.max_length,
-                request.paragraph_options.min_length,
-                request.paragraph_options.overlap,
-                request.paragraph_options.preserve_sentences is not None,
-                request.paragraph_options.merge_strategy
-            ]):
-                embedding_service._paragraph_processor = ParagraphProcessor(
-                    ParagraphConfig(
-                        max_length=request.paragraph_options.max_length or settings.paragraph_max_length,
-                        min_length=request.paragraph_options.min_length or settings.paragraph_min_length,
-                        overlap=request.paragraph_options.overlap or settings.paragraph_overlap,
-                        preserve_sentences=request.paragraph_options.preserve_sentences
-                            if request.paragraph_options.preserve_sentences is not None
-                            else settings.preserve_sentences
-                    )
+            # Create ParagraphService with custom options if provided
+            paragraph_service = ParagraphService(
+                min_length=request.paragraph_options.min_length or 100,
+                max_length=request.paragraph_options.max_length or 1000,
+                overlap=request.paragraph_options.overlap or 50
+            )
+            
+            # Process each text
+            for text in request.texts:
+                # Split text into paragraphs and get embeddings
+                paragraphs = paragraph_service.split_text(text)
+                paragraph_embeddings = [embedding_service.get_embedding(p) for p in paragraphs]
+                
+                # Merge embeddings using specified strategy
+                embedding = paragraph_service.merge_embeddings(
+                    paragraph_embeddings,
+                    strategy=request.paragraph_options.merge_strategy or "mean"
                 )
-                if request.paragraph_options.merge_strategy:
-                    settings.embedding_merge_strategy = request.paragraph_options.merge_strategy
-
-        # Generate embeddings with paragraph processing if enabled
-        embeddings = embedding_service.get_embeddings(request.texts, use_paragraphs=use_paragraphs)
+                embeddings.append(embedding)
+        else:
+            # Generate embeddings without paragraph processing
+            embeddings = [embedding_service.get_embedding(text) for text in request.texts]
+        
+        # Convert list to numpy array
+        embeddings_array = np.array(embeddings)
         
         # Store embeddings in vector store
-        vector_ids = vector_store.add_vectors(embeddings)
+        vector_ids = vector_store.add_vectors(embeddings_array)
         
         # Train the index after adding new vectors
         vector_store.train()
         
-        # Using zip for parallel iteration over embeddings, texts and vector IDs.
-        # This ensures each embedding is correctly matched with its corresponding text and ID,
-        # even if their counts don't match (which shouldn't happen, but we ensure safety).
-        # zip is also more efficient than using indices as it doesn't require additional computations.
         return BatchEmbeddingResponse(
             embeddings=[
                 EmbeddingResponse(
@@ -252,7 +245,7 @@ async def search_similar(
             k=request.k,
         )
         
-        # Если нет результатов, возвращаем пустой список
+        # If no results, return empty list
         if distances.size == 0 or indices.size == 0:
             return SearchResponse(
                 query=request.text,
@@ -285,4 +278,4 @@ async def search_similar(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error("Failed to search similar texts: %s", str(e), exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error") 
+        raise HTTPException(status_code=500, detail="Internal server error")
