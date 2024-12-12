@@ -1,5 +1,12 @@
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, validator
+from enum import Enum
+
+class ProcessingStrategy(str, Enum):
+				"""Enum for document processing strategies."""
+				PARAGRAPHS = "paragraphs"  # Split into paragraphs and save individual embeddings
+				MERGED = "merged"          # Split into paragraphs, merge embeddings, save as one
+				COMBINED = "combined"      # Do both above strategies
 
 class TextRequest(BaseModel):
     """Request model for text embedding."""
@@ -200,5 +207,96 @@ class ErrorResponse(BaseModel):
             "example": {
                 "error": "Text cannot be empty",
                 "details": "The provided text was empty or contained only whitespace"
+            }
+        }
+
+class DocumentUploadResponse(BaseModel):
+    """Response model for document upload."""
+    message: str = Field(
+        ...,
+        description="Status message",
+        example="Document processed successfully"
+    )
+    filename: str = Field(
+        ...,
+        description="Name of the processed file",
+        example="document.txt"
+    )
+    strategy: ProcessingStrategy = Field(
+        ...,
+        description="Processing strategy used",
+        example=ProcessingStrategy.PARAGRAPHS
+    )
+    paragraphs_count: int = Field(
+        ...,
+        description="Number of paragraphs extracted",
+        example=5
+    )
+    paragraphs: List[str] = Field(
+        ...,
+        description="List of extracted paragraphs",
+        example=["First paragraph", "Second paragraph"]
+    )
+    vector_ids: Optional[List[int]] = Field(
+        None,
+        description="IDs of paragraph vectors (for PARAGRAPHS strategy)",
+        example=[1, 2, 3, 4, 5]
+    )
+    vector_id: Optional[int] = Field(
+        None,
+        description="ID of merged vector (for MERGED strategy)",
+        example=1
+    )
+    paragraph_vector_ids: Optional[List[int]] = Field(
+        None,
+        description="IDs of paragraph vectors (for COMBINED strategy)",
+        example=[1, 2, 3, 4, 5]
+    )
+    merged_vector_id: Optional[int] = Field(
+        None,
+        description="ID of merged vector (for COMBINED strategy)",
+        example=6
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "message": "Document processed successfully",
+                "filename": "document.txt",
+                "strategy": "paragraphs",
+                "paragraphs_count": 5,
+                "paragraphs": [
+                    "First paragraph with content.",
+                    "Second paragraph with more content.",
+                    "Third paragraph with additional content."
+                ],
+                "vector_ids": [1, 2, 3, 4, 5]
+            }
+        }
+
+class SupportedTypesResponse(BaseModel):
+    """Response model for supported file types."""
+    supported_types: List[str] = Field(
+        ...,
+        description="List of supported file extensions",
+        example=[".txt", ".md", ".html"]
+    )
+    max_file_size_mb: float = Field(
+        ...,
+        description="Maximum allowed file size in MB",
+        example=10.0
+    )
+    processing_strategies: List[str] = Field(
+        ...,
+        description="Available processing strategies",
+        example=["paragraphs", "merged", "combined"]
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "supported_types": [".txt", ".md", ".html"],
+                "max_file_size_mb": 10.0,
+                "processing_strategies": ["paragraphs", "merged", "combined"]
             }
         }
