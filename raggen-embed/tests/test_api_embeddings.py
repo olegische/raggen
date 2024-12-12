@@ -1,14 +1,29 @@
 import pytest
+from typing import Generator
 from fastapi.testclient import TestClient
 import numpy as np
 from unittest.mock import patch, MagicMock
 
 from main import app
-from api.models import ParagraphOptions
+from api.embeddings import get_embedding_service, get_vector_store, _embedding_service, _vector_store
 
-client = TestClient(app=app)
+@pytest.fixture
+def client() -> Generator:
+    """Test client fixture."""
+    with TestClient(app) as c:
+        yield c
 
-def test_embed_text_with_paragraphs():
+@pytest.fixture(autouse=True)
+def reset_global_services():
+    """Reset global services before each test."""
+    global _embedding_service, _vector_store
+    _embedding_service = None
+    _vector_store = None
+    yield
+    _embedding_service = None
+    _vector_store = None
+
+def test_embed_text_with_paragraphs(client):
     """Test embedding generation with paragraph processing."""
     text = (
         "First paragraph with some meaningful content. "
@@ -32,29 +47,36 @@ def test_embed_text_with_paragraphs():
         mock_vs.dimension = 384
         mock_vs.add_vectors.return_value = [1]
         
-        # Test request with paragraph options
-        response = client.post(
-            "/embed",
-            json={
-                "text": text,
-                "paragraph_options": {
-                    "enabled": True,
-                    "max_length": 200,
-                    "min_length": 50,
-                    "overlap": 20,
-                    "merge_strategy": "weighted"
-                }
-            }
-        )
+        # Override FastAPI dependencies
+        app.dependency_overrides[get_embedding_service] = lambda: mock_embed
+        app.dependency_overrides[get_vector_store] = lambda: mock_vs
         
-        assert response.status_code == 200
-        data = response.json()
-        assert "embedding" in data
-        assert len(data["embedding"]) == 384
-        assert data["vector_id"] == 1
-        assert data["text"] == text
+        try:
+            # Test request with paragraph options
+            response = client.post(
+                "/api/v1/embed",
+                json={
+                    "text": text,
+                    "paragraph_options": {
+                        "enabled": True,
+                        "max_length": 200,
+                        "min_length": 50,
+                        "overlap": 20,
+                        "merge_strategy": "weighted"
+                    }
+                }
+            )
+            
+            assert response.status_code == 200
+            data = response.json()
+            assert "embedding" in data
+            assert len(data["embedding"]) == 384
+            assert data["vector_id"] == 1
+            assert data["text"] == text
+        finally:
+            app.dependency_overrides.clear()
 
-def test_batch_embed_with_paragraphs():
+def test_batch_embed_with_paragraphs(client):
     """Test batch embedding with paragraph processing."""
     texts = [
         "First text with multiple sentences. Second sentence here. Third sentence.",
@@ -74,37 +96,44 @@ def test_batch_embed_with_paragraphs():
         mock_vs.dimension = 384
         mock_vs.add_vectors.return_value = [1, 2]
         
-        # Test request with paragraph options
-        response = client.post(
-            "/embed/batch",
-            json={
-                "texts": texts,
-                "paragraph_options": {
-                    "enabled": True,
-                    "max_length": 200,
-                    "min_length": 50,
-                    "overlap": 20,
-                    "merge_strategy": "mean"
-                }
-            }
-        )
+        # Override FastAPI dependencies
+        app.dependency_overrides[get_embedding_service] = lambda: mock_embed
+        app.dependency_overrides[get_vector_store] = lambda: mock_vs
         
-        assert response.status_code == 200
-        data = response.json()
-        assert "embeddings" in data
-        assert len(data["embeddings"]) == len(texts)
-        for i, embedding_data in enumerate(data["embeddings"]):
-            assert len(embedding_data["embedding"]) == 384
-            assert embedding_data["vector_id"] == i + 1
-            assert embedding_data["text"] == texts[i]
+        try:
+            # Test request with paragraph options
+            response = client.post(
+                "/api/v1/embed/batch",
+                json={
+                    "texts": texts,
+                    "paragraph_options": {
+                        "enabled": True,
+                        "max_length": 200,
+                        "min_length": 50,
+                        "overlap": 20,
+                        "merge_strategy": "mean"
+                    }
+                }
+            )
+            
+            assert response.status_code == 200
+            data = response.json()
+            assert "embeddings" in data
+            assert len(data["embeddings"]) == len(texts)
+            for i, embedding_data in enumerate(data["embeddings"]):
+                assert len(embedding_data["embedding"]) == 384
+                assert embedding_data["vector_id"] == i + 1
+                assert embedding_data["text"] == texts[i]
+        finally:
+            app.dependency_overrides.clear()
 
-def test_invalid_paragraph_options():
+def test_invalid_paragraph_options(client):
     """Test validation of paragraph options."""
     text = "Sample text for testing."
     
     # Test invalid max_length
     response = client.post(
-        "/embed",
+        "/api/v1/embed",
         json={
             "text": text,
             "paragraph_options": {
@@ -115,11 +144,11 @@ def test_invalid_paragraph_options():
             }
         }
     )
-    assert response.status_code == 400
+    assert response.status_code == 422
     
     # Test invalid overlap
     response = client.post(
-        "/embed",
+        "/api/v1/embed",
         json={
             "text": text,
             "paragraph_options": {
@@ -130,11 +159,11 @@ def test_invalid_paragraph_options():
             }
         }
     )
-    assert response.status_code == 400
+    assert response.status_code == 422
     
     # Test invalid merge strategy
     response = client.post(
-        "/embed",
+        "/api/v1/embed",
         json={
             "text": text,
             "paragraph_options": {
@@ -146,9 +175,9 @@ def test_invalid_paragraph_options():
             }
         }
     )
-    assert response.status_code == 400
+    assert response.status_code == 422
 
-def test_paragraph_processing_disabled():
+def test_paragraph_processing_disabled(client):
     """Test that paragraph processing is properly disabled when not requested."""
     text = "Sample text for testing without paragraph processing."
     
@@ -165,15 +194,22 @@ def test_paragraph_processing_disabled():
         mock_vs.dimension = 384
         mock_vs.add_vectors.return_value = [1]
         
-        # Test request without paragraph options
-        response = client.post(
-            "/embed",
-            json={"text": text}
-        )
+        # Override FastAPI dependencies
+        app.dependency_overrides[get_embedding_service] = lambda: mock_embed
+        app.dependency_overrides[get_vector_store] = lambda: mock_vs
         
-        assert response.status_code == 200
-        data = response.json()
-        assert "embedding" in data
-        
-        # Verify that get_embedding was called only once
-        mock_embed.get_embedding.assert_called_once_with(text)
+        try:
+            # Test request without paragraph options
+            response = client.post(
+                "/api/v1/embed",
+                json={"text": text}
+            )
+            
+            assert response.status_code == 200
+            data = response.json()
+            assert "embedding" in data
+            
+            # Verify that get_embedding was called only once
+            mock_embed.get_embedding.assert_called_once_with(text)
+        finally:
+            app.dependency_overrides.clear()
