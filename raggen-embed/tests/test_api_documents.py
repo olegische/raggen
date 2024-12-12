@@ -97,13 +97,13 @@ def test_vector_storer():
     # Test store_vectors
     logger.info("Testing store_vectors method")
     vector_ids = storer.store_vectors(mock_vs, SAMPLE_EMBEDDINGS)
-    assert vector_ids == [1, 2, 3]
+    assert vector_ids == [0, 1, 2]  # IDs start from 0 in FAISS
     mock_vs.add_vectors.assert_called_with(SAMPLE_EMBEDDINGS)
     
     # Test store_single_vector
     logger.info("Testing store_single_vector method")
     vector_id = storer.store_single_vector(mock_vs, SAMPLE_EMBEDDING)
-    assert vector_id == 4
+    assert vector_id == 3  # Next ID after [0,1,2]
     mock_vs.add_vectors.assert_called_with([SAMPLE_EMBEDDING])
     logger.info("VectorStorer test completed successfully")
 
@@ -118,7 +118,7 @@ def test_paragraph_embedding_strategy():
     mock_ps.get_embeddings.return_value = SAMPLE_EMBEDDINGS
     
     mock_vs = MagicMock()
-    mock_vs.add_vectors.return_value = [1, 2, 3]
+    mock_vs.add_vectors.return_value = [0, 1, 2]  # IDs start from 0
     
     # Create strategy
     logger.info("Creating ParagraphEmbeddingStrategy instance")
@@ -132,7 +132,7 @@ def test_paragraph_embedding_strategy():
     logger.info("Verifying results")
     assert result["strategy"] == "paragraphs"
     assert result["paragraphs_count"] == len(SAMPLE_PARAGRAPHS)
-    assert result["vector_ids"] == [1, 2, 3]
+    assert result["vector_ids"] == [0, 1, 2]  # IDs start from 0
     assert result["paragraphs"] == SAMPLE_PARAGRAPHS
     logger.info("ParagraphEmbeddingStrategy test completed successfully")
 
