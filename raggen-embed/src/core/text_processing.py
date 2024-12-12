@@ -51,12 +51,14 @@ class ParagraphProcessor:
             matches = list(re.finditer(endings, text[position:]))
             if matches:
                 return position + matches[0].end()
+            # If no sentence boundary found, return end of text
+            return len(text)
         else:
             matches = list(re.finditer(endings, text[:position]))
             if matches:
                 return matches[-1].end()
-                
-        return position
+            # If no sentence boundary found going backward, return start of text
+            return 0
 
     def _get_context(self, text: str, start: int, end: int, context_size: int = 200) -> tuple[Optional[str], Optional[str]]:
         """
@@ -85,45 +87,74 @@ class ParagraphProcessor:
             
         Returns:
             List of Paragraph objects
+            
+        Raises:
+            ValueError: If text is empty or paragraphs exceed max length
         """
         if not text:
             raise ValueError("Empty text provided")
             
         logger.debug("Splitting text of length %d into paragraphs", len(text))
         paragraphs: List[Paragraph] = []
-        position = 0
         
-        while position < len(text):
-            # Determine end position for current paragraph
-            end_pos = min(position + self.config.max_length, len(text))
+        # Split text into chunks
+        start = 0
+        while start < len(text):
+            # Calculate initial end position
+            end = min(start + self.config.max_length, len(text))
             
-            # Adjust boundaries if preserving sentences
-            if self.config.preserve_sentences and end_pos < len(text):
-                end_pos = self._find_sentence_boundary(text, end_pos)
+            # Adjust end position if preserving sentences
+            if self.config.preserve_sentences and end < len(text):
+                sentence_end = self._find_sentence_boundary(text[start:end], end - start - 1, forward=False)
+                if sentence_end > 0:
+                    end = start + sentence_end
             
-            # Get the paragraph text
-            paragraph_text = text[position:end_pos].strip()
+            # Get chunk and validate length
+            chunk = text[start:end].strip()
+            if len(chunk) > settings.max_text_length:
+                # If chunk is too long, try to find a sentence boundary within max_text_length
+                if self.config.preserve_sentences:
+                    sentence_end = self._find_sentence_boundary(
+                        text[start:start + settings.max_text_length],
+                        settings.max_text_length - 1,
+                        forward=False
+                    )
+                    if sentence_end > 0:
+                        end = start + sentence_end
+                        chunk = text[start:end].strip()
+                    else:
+                        # If no sentence boundary found, force split at max_text_length
+                        end = start + settings.max_text_length
+                        chunk = text[start:end].strip()
+                else:
+                    # If not preserving sentences, just cut at max_text_length
+                    end = start + settings.max_text_length
+                    chunk = text[start:end].strip()
             
-            # Skip if paragraph is too short (unless it's the last one)
-            if len(paragraph_text) < self.config.min_length and end_pos < len(text):
-                position += len(paragraph_text)
+            # Skip if chunk is too short (unless it's the last chunk)
+            if len(chunk) < self.config.min_length and end < len(text):
+                start = end
                 continue
             
-            # Get context for the paragraph
-            context_before, context_after = self._get_context(text, position, end_pos)
+            # Get context
+            context_before = text[max(0, start - 200):start].strip() if start > 0 else None
+            context_after = text[end:min(len(text), end + 200)].strip() if end < len(text) else None
             
-            # Create paragraph object
+            # Create paragraph
             paragraph = Paragraph(
-                text=paragraph_text,
-                start_pos=position,
-                end_pos=end_pos,
+                text=chunk,
+                start_pos=start,
+                end_pos=end,
                 context_before=context_before,
                 context_after=context_after
             )
             paragraphs.append(paragraph)
             
-            # Move position for next iteration, considering overlap
-            position = end_pos - self.config.overlap if end_pos < len(text) else end_pos
+            # Move to next position, considering overlap
+            next_start = end - self.config.overlap if end < len(text) else end
+            if next_start <= start:  # Ensure forward progress
+                next_start = start + 1
+            start = next_start
             
         logger.info("Split text into %d paragraphs", len(paragraphs))
         return paragraphs
@@ -144,12 +175,19 @@ class ParagraphProcessor:
             
         import numpy as np
         
+        # Convert to numpy array for vectorized operations
+        embeddings = np.array(paragraph_embeddings)
+        num_paragraphs = len(embeddings)
+        
         if strategy == "mean":
-            return np.mean(paragraph_embeddings, axis=0).tolist()
+            # Simple average of all embeddings
+            return np.mean(embeddings, axis=0).tolist()
         elif strategy == "weighted":
-            # Simple linear weighting - more weight to earlier paragraphs
-            weights = np.linspace(1.0, 0.5, len(paragraph_embeddings))
-            weights = weights / np.sum(weights)  # Normalize
-            return np.average(paragraph_embeddings, axis=0, weights=weights).tolist()
+            # Create position-based weights with exponential decay
+            weights = np.exp(-np.arange(num_paragraphs))
+            # Normalize weights
+            weights = weights / np.sum(weights)
+            # Apply weighted average
+            return np.average(embeddings, axis=0, weights=weights).tolist()
         else:
             raise ValueError(f"Unknown merging strategy: {strategy}")
