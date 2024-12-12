@@ -1,4 +1,4 @@
-from typing import List, Dict, Optional, Union
+from typing import List, Dict, Optional
 import time
 import hashlib
 from collections import OrderedDict
@@ -8,7 +8,6 @@ import numpy as np
 
 from config.settings import Settings
 from utils.logging import get_logger
-from core.text_processing import ParagraphProcessor, ParagraphConfig, Paragraph
 
 settings = Settings()
 logger = get_logger(__name__)
@@ -30,16 +29,6 @@ class EmbeddingService:
         self.load_time = 0.0
         self._cache: OrderedDict[str, np.ndarray] = OrderedDict()
         self._cache_size = settings.batch_size * 10
-        
-        # Initialize paragraph processor
-        self._paragraph_processor = ParagraphProcessor(
-            ParagraphConfig(
-                max_length=settings.paragraph_max_length,
-                min_length=settings.paragraph_min_length,
-                overlap=settings.paragraph_overlap,
-                preserve_sentences=settings.preserve_sentences
-            )
-        )
         
         if not lazy_init:
             self._initialize_model()
@@ -82,13 +71,12 @@ class EmbeddingService:
             if len(text) > settings.max_text_length:
                 raise ValueError(f"Text at position {i} exceeds maximum length of {settings.max_text_length}")
     
-    def get_embeddings(self, texts: List[str], use_paragraphs: bool = False) -> np.ndarray:
+    def get_embeddings(self, texts: List[str]) -> np.ndarray:
         """
         Generate embeddings for a list of texts.
         
         Args:
             texts: List of texts to generate embeddings for.
-            use_paragraphs: Whether to process texts as paragraphs (default: False)
             
         Returns:
             numpy.ndarray: Array of embeddings.
@@ -103,48 +91,15 @@ class EmbeddingService:
             logger.debug("Processing batch of %d texts for embeddings", len(texts))
             start_time = time.time()
             
-            if use_paragraphs:
-                logger.debug("Using paragraph processing mode")
-                all_embeddings = []
-                
-                for i, text in enumerate(texts):
-                    logger.debug("Text %d length: %d characters", i, len(text))
-                    
-                    # Process text into paragraphs
-                    paragraphs = self._paragraph_processor.split_text(text)
-                    logger.debug("Text %d split into %d paragraphs", i, len(paragraphs))
-                    
-                    # Log paragraph details
-                    for j, para in enumerate(paragraphs):
-                        logger.debug("Text %d, Paragraph %d length: %d characters",
-                                   i, j, len(para.text))
-                    
-                    # Get embeddings for each paragraph
-                    paragraph_embeddings = self._get_paragraph_embeddings(paragraphs)
-                    logger.debug("Generated embeddings for %d paragraphs in text %d",
-                               len(paragraph_embeddings), i)
-                    
-                    # Merge paragraph embeddings
-                    merged_embedding = self._paragraph_processor.merge_embeddings(
-                        paragraph_embeddings,
-                        strategy=settings.embedding_merge_strategy
-                    )
-                    logger.debug("Merged embeddings for text %d using strategy: %s",
-                               i, settings.embedding_merge_strategy)
-                    
-                    all_embeddings.append(merged_embedding)
-                
-                embeddings = np.array(all_embeddings)
-            else:
-                # Log text lengths for debugging
-                for i, text in enumerate(texts):
-                    logger.debug("Text %d length: %d characters", i, len(text))
-                
-                # For batch processing, we don't use cache as it's typically
-                # used for different texts each time
-                embeddings = self.model.encode(texts, convert_to_numpy=True)
+            # Log text lengths for debugging
+            for i, text in enumerate(texts):
+                logger.debug("Text %d length: %d characters", i, len(text))
             
+            # For batch processing, we don't use cache as it's typically
+            # used for different texts each time
+            embeddings = self.model.encode(texts, convert_to_numpy=True)
             process_time = time.time() - start_time
+            
             logger.debug("Embeddings generation completed in %.2f seconds", process_time)
             logger.debug("Generated embeddings shape: %s", str(embeddings.shape))
             
@@ -153,41 +108,6 @@ class EmbeddingService:
         except Exception as e:
             logger.error("Failed to generate embeddings: %s", str(e), exc_info=True)
             raise
-
-    def _get_paragraph_embeddings(self, paragraphs: List[Paragraph]) -> List[List[float]]:
-        """
-        Generate embeddings for a list of paragraphs.
-        
-        Args:
-            paragraphs: List of Paragraph objects
-            
-        Returns:
-            List of embedding vectors for each paragraph
-        """
-        # Extract text from paragraphs
-        texts = [p.text for p in paragraphs]
-        
-        # Process in batches to manage memory
-        batch_size = settings.batch_size
-        embeddings = []
-        
-        for i in range(0, len(texts), batch_size):
-            batch_texts = texts[i:i + batch_size]
-            logger.debug("Processing paragraph batch %d-%d of %d",
-                        i, min(i + batch_size, len(texts)), len(texts))
-            
-            # Log batch text lengths
-            for j, text in enumerate(batch_texts):
-                logger.debug("Paragraph batch %d, text %d length: %d characters",
-                           i // batch_size, j, len(text))
-            
-            batch_embeddings = self.model.encode(batch_texts, convert_to_numpy=True)
-            embeddings.extend(batch_embeddings.tolist())
-            
-            logger.debug("Completed paragraph batch %d-%d",
-                        i, min(i + batch_size, len(texts)))
-        
-        return embeddings
         
     def get_embedding(self, text: str) -> np.ndarray:
         """
