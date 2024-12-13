@@ -1,5 +1,5 @@
 import os
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 import numpy as np
 from datetime import datetime
 import warnings
@@ -14,7 +14,12 @@ logger = get_logger(__name__)
 class PersistentFAISSStore:
     """Persistent vector store implementation that wraps FAISSVectorStore."""
     
-    def __init__(self, dimension: int = settings.vector_dim, auto_save: bool = True, index_path: Optional[str] = None):
+    def __init__(
+        self,
+        dimension: int = settings.vector_dim,
+        auto_save: bool = True,
+        index_path: Optional[str] = None
+    ):
         """
         Initialize persistent FAISS vector store.
         
@@ -50,21 +55,28 @@ class PersistentFAISSStore:
             if self.auto_save:
                 self.store.save(self.index_path)
     
-    def train(self, vectors: np.ndarray) -> None:
-        """Train the underlying store."""
-        self.store.train(vectors)
+    def add_vectors(self, vectors: np.ndarray) -> None:
+        """
+        Add vectors to the store.
+        
+        Args:
+            vectors: Vectors to add, shape (n_vectors, dimension)
+        """
+        self.store.add(vectors)
         if self.auto_save:
             self._save_with_backup()
-    
-    def add_vectors(self, vectors: np.ndarray, ids: Optional[np.ndarray] = None) -> List[int]:
-        """Add vectors to the store."""
-        result = self.store.add_vectors(vectors, ids)
-        if self.auto_save:
-            self._save_with_backup()
-        return result
     
     def search(self, query_vectors: np.ndarray, k: int = settings.n_results) -> Tuple[np.ndarray, np.ndarray]:
-        """Search for similar vectors."""
+        """
+        Search for similar vectors.
+        
+        Args:
+            query_vectors: Query vectors, shape (n_queries, dimension)
+            k: Number of results to return per query
+            
+        Returns:
+            Tuple of (distances, indices) arrays
+        """
         return self.store.search(query_vectors, k)
     
     def _save_with_backup(self) -> None:

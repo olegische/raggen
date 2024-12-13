@@ -17,19 +17,25 @@ def test_dir(tmp_path):
     os.makedirs(test_dir, exist_ok=True)
     
     # Patch settings to use test directory
-    original_path = settings.index_path
-    settings.index_path = str(test_dir / "index.faiss")
+    original_path = settings.faiss_index_path
+    settings.faiss_index_path = str(test_dir / "index.faiss")
     
     yield test_dir
     
     # Restore original path
-    settings.index_path = original_path
+    settings.faiss_index_path = original_path
     shutil.rmtree(test_dir.parent)
 
 @pytest.fixture
 def sample_vectors():
     """Generate sample vectors for testing."""
-    return np.random.randn(100, settings.vector_dim).astype(np.float32)
+    # Generate enough vectors for any index type
+    n_vectors = max(
+        39 * settings.n_clusters,  # For IVF_FLAT
+        39 * 256,  # For IVF_PQ (default n_centroids)
+        10000  # Minimum reasonable size
+    ) + 100  # Add some extra vectors
+    return np.random.randn(n_vectors, settings.vector_dim).astype(np.float32)
 
 def test_initialization(test_dir):
     """Test store initialization."""
@@ -41,7 +47,6 @@ def test_persistence(test_dir, sample_vectors):
     """Test that vectors persist between store instances."""
     # Create and add vectors to first instance
     store1 = PersistentFAISSStore(index_path=str(test_dir / "index.faiss"))
-    store1.train(sample_vectors)
     store1.add_vectors(sample_vectors)
     initial_count = len(store1)
 
@@ -59,11 +64,10 @@ def test_persistence(test_dir, sample_vectors):
 def test_backup_creation(test_dir, sample_vectors):
     """Test backup file creation."""
     store = PersistentFAISSStore(index_path=str(test_dir / "index.faiss"))
-    store.train(sample_vectors)
     
     # Add vectors multiple times to trigger backups
     for i in range(3):
-        store.add_vectors(sample_vectors[i*10:(i+1)*10])
+        store.add_vectors(sample_vectors[i*1000:(i+1)*1000])
         time.sleep(1)  # Ensure different timestamps
     
     # Check that backup files exist
@@ -76,11 +80,10 @@ def test_backup_creation(test_dir, sample_vectors):
 def test_backup_cleanup(test_dir, sample_vectors):
     """Test cleanup of old backup files."""
     store = PersistentFAISSStore(index_path=str(test_dir / "index.faiss"))
-    store.train(sample_vectors)
     
     # Add vectors multiple times to create many backups
     for i in range(10):
-        store.add_vectors(sample_vectors[i*10:(i+1)*10])
+        store.add_vectors(sample_vectors[i*1000:(i+1)*1000])
         time.sleep(1)  # Ensure different timestamps
     
     # Check that only the specified number of backups are kept
@@ -94,7 +97,6 @@ def test_dimension_mismatch_warning(test_dir, sample_vectors):
     """Test warning when loading index with different dimensions."""
     # Create initial store
     store1 = PersistentFAISSStore(index_path=str(test_dir / "index.faiss"), dimension=384)
-    store1.train(sample_vectors)
     store1.add_vectors(sample_vectors)
 
     # Try to create store with different dimension
@@ -106,7 +108,6 @@ def test_auto_save_disabled(test_dir, sample_vectors):
     """Test behavior when auto_save is disabled."""
     # Create store with auto_save disabled
     store1 = PersistentFAISSStore(index_path=str(test_dir / "index.faiss"), auto_save=False)
-    store1.train(sample_vectors)
     store1.add_vectors(sample_vectors)
 
     # Create new instance - should not have the vectors since auto_save is disabled
@@ -116,8 +117,7 @@ def test_auto_save_disabled(test_dir, sample_vectors):
 def test_backup_restoration(test_dir, sample_vectors, monkeypatch):
     """Test backup restoration after failed save."""
     store = PersistentFAISSStore(index_path=str(test_dir / "index.faiss"))
-    store.train(sample_vectors)
-    store.add_vectors(sample_vectors[:50])  # Add initial vectors
+    store.add_vectors(sample_vectors[:5000])  # Add initial vectors
 
     # Mock faiss.write_index to fail
     def mock_save(*args):
@@ -127,9 +127,8 @@ def test_backup_restoration(test_dir, sample_vectors, monkeypatch):
     with monkeypatch.context() as m:
         m.setattr("faiss.write_index", mock_save)
         with pytest.raises(RuntimeError, match="Simulated save failure"):
-            store.add_vectors(sample_vectors[50:])  # Should fail to save but restore backup
+            store.add_vectors(sample_vectors[5000:])  # Should fail to save but restore backup
 
     # Create new instance and verify it has the initial vectors
     store2 = PersistentFAISSStore(index_path=str(test_dir / "index.faiss"))
-    assert len(store2) == 50  # Should have only the initial vectors
- 
+    assert len(store2) == 5000  # Should have only the initial vectors
