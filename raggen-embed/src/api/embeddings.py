@@ -129,13 +129,7 @@ async def embed_texts(
         # Store embeddings in vector store
         vector_ids = vector_store.add_vectors(embeddings)
         
-        # Train the index after adding new vectors
-        vector_store.train()
-        
-        # Using zip for parallel iteration over embeddings, texts and vector IDs.
-        # This ensures each embedding is correctly matched with its corresponding text and ID,
-        # even if their counts don't match (which shouldn't happen, but we ensure safety).
-        # zip is also more efficient than using indices as it doesn't require additional computations.
+        # Using zip for parallel iteration over embeddings, texts and vector IDs
         return BatchEmbeddingResponse(
             embeddings=[
                 EmbeddingResponse(
@@ -199,10 +193,10 @@ async def search_similar(
         # Search similar vectors
         distances, indices = vector_store.search(
             query_vectors=np.expand_dims(query_embedding, 0),
-            k=request.k,
+            k=request.k
         )
         
-        # Если нет результатов, возвращаем пустой список
+        # If no results, return empty list
         if distances.size == 0 or indices.size == 0:
             return SearchResponse(
                 query=request.text,
@@ -216,20 +210,19 @@ async def search_similar(
         else:
             scores = np.ones_like(distances[0])
         
-        # Get texts for results (in a real application, you would have a mapping of IDs to texts)
-        # Here we just return placeholder texts
+        # Create results
         results = [
             SearchResult(
                 text=f"Similar text {idx}",
                 score=float(score),
-                vector_id=int(idx),
+                vector_id=int(idx)
             )
             for idx, score in zip(indices[0], scores)
         ]
         
         return SearchResponse(
             query=request.text,
-            results=results,
+            results=results
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
