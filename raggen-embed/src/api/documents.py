@@ -9,7 +9,7 @@ from typing import List, Dict, Any, Tuple
 import numpy as np
 
 from core.paragraph_service import ParagraphService
-from core.vector_store.faiss_store import FAISSVectorStore
+from core.vector_store.persistent_store import PersistentFAISSStore
 from core.embeddings import EmbeddingService
 
 router = APIRouter()
@@ -53,18 +53,18 @@ class EmbeddingMerger:
 class VectorStorer:
     """Mixin for vector storage operations."""
     
-    def store_vectors(self, vector_store: FAISSVectorStore, vectors: np.ndarray) -> List[int]:
+    def store_vectors(self, vector_store: PersistentFAISSStore, vectors: np.ndarray) -> List[int]:
         """Store vectors and return their IDs."""
         return vector_store.add_vectors(vectors)
     
-    def store_single_vector(self, vector_store: FAISSVectorStore, vector: np.ndarray) -> int:
+    def store_single_vector(self, vector_store: PersistentFAISSStore, vector: np.ndarray) -> int:
         """Store a single vector and return its ID."""
         return vector_store.add_vectors([vector])[0]
 
 class DocumentProcessor(ABC, TextProcessor):
     """Abstract base class for document processing strategies."""
     
-    def __init__(self, paragraph_service: ParagraphService, vector_store: FAISSVectorStore):
+    def __init__(self, paragraph_service: ParagraphService, vector_store: PersistentFAISSStore):
         super().__init__(paragraph_service)
         self.vector_store = vector_store
     
@@ -134,19 +134,17 @@ def get_paragraph_service() -> ParagraphService:
     """Get or create paragraph service instance."""
     return ParagraphService()
 
-def get_vector_store() -> FAISSVectorStore:
+def get_vector_store() -> PersistentFAISSStore:
     """Get or create vector store instance."""
     global _vector_store
     if _vector_store is None:
-        _vector_store = FAISSVectorStore()
-        # Train the empty index immediately
-        _vector_store.train(np.zeros((1, _vector_store.dimension), dtype=np.float32))
+        _vector_store = PersistentFAISSStore()
     return _vector_store
 
 def get_processor(
     strategy: ProcessingStrategy,
     paragraph_service: ParagraphService,
-    vector_store: FAISSVectorStore
+    vector_store: PersistentFAISSStore
 ) -> DocumentProcessor:
     """Factory function to get appropriate processor based on strategy."""
     processors = {
@@ -174,7 +172,7 @@ async def upload_document(
     file: UploadFile,
     strategy: ProcessingStrategy = ProcessingStrategy.PARAGRAPHS,
     paragraph_service: ParagraphService = Depends(get_paragraph_service),
-    vector_store: FAISSVectorStore = Depends(get_vector_store)
+    vector_store: PersistentFAISSStore = Depends(get_vector_store)
 ) -> JSONResponse:
     """
     Upload and process a document file.
