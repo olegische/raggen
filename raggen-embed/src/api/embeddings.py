@@ -77,6 +77,15 @@ async def embed_text(
         # Store embedding in vector store
         vector_id = vector_store.add_vectors(np.expand_dims(embedding, 0))[0]
         
+        # TODO: Potential issue - no index training in single text endpoint
+        # This can lead to:
+        # 1. Search quality degradation if only single endpoint is used
+        # 2. Performance issues with large number of vectors
+        # 3. Inconsistent behavior between batch and single endpoints
+        # 4. Scalability problems in production
+        # Consider adding periodic training or implementing training strategy
+        # in the next release
+        
         return EmbeddingResponse(
             embedding=embedding.tolist(),
             text=request.text,

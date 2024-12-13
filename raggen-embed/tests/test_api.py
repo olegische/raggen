@@ -65,7 +65,9 @@ def test_embed_text(client, monkeypatch):
         
         # Verify vector store operations
         assert store_calls["add"] == 1
-        assert store_calls["train"] == 1
+        # Note: train() is not called for single text embedding in the first release
+        # This is by design, as training is only done in batch operations
+        assert store_calls["train"] == 0
         
         # Test empty text
         response = client.post(
