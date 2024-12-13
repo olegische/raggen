@@ -304,6 +304,7 @@ def test_recovery(vector_store, large_vectors, tmp_path):
             store.add(bad_vectors)
         except ValueError:
             pass  # Expected error
+        return store  # Return store to preserve state
     
     # Test recovery from partial save
     partial_path = str(data_dir / "partial.faiss")
@@ -318,14 +319,14 @@ def test_recovery(vector_store, large_vectors, tmp_path):
     assert recovered_store.n_vectors == len(large_vectors)
     
     # Test recovery from failed add
-    new_store = FAISSVectorStore()
-    simulate_crash_add(new_store, large_vectors)
+    crashed_store = simulate_crash_add(FAISSVectorStore(), large_vectors)
+    assert crashed_store.n_vectors == 10000  # Should have first 10000 vectors
     
     # Should be able to continue after error
-    new_store.add(large_vectors[10000:])
-    assert new_store.n_vectors == len(large_vectors) - 10000
+    crashed_store.add(large_vectors[10000:])
+    assert crashed_store.n_vectors == len(large_vectors)
     
     # Verify search still works
     query = np.random.randn(1, settings.vector_dim).astype(np.float32)
-    distances, indices = new_store.search(query)
+    distances, indices = crashed_store.search(query)
     assert len(indices[0]) == settings.n_results
