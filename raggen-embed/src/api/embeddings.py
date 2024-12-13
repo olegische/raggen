@@ -74,8 +74,15 @@ async def embed_text(
         # Generate embedding
         embedding = embedding_service.get_embedding(request.text)
         
-        # Store embedding in vector store
-        vector_id = vector_store.add_vectors(np.expand_dims(embedding, 0))[0]
+        # Store embedding in vector store and train index
+        vectors = np.expand_dims(embedding, 0)
+        vector_id = vector_store.add_vectors(vectors)[0]
+        
+        # Train index with new vector to prevent search quality degradation.
+        # This is important because FAISS index needs to be trained to maintain
+        # optimal search performance. Without training, the quality of search
+        # results may degrade as more vectors are added.
+        vector_store.train(vectors)
         
         return EmbeddingResponse(
             embedding=embedding.tolist(),
@@ -153,7 +160,7 @@ async def embed_texts(
         400: {"model": ErrorResponse, "description": "Invalid input"},
         500: {"model": ErrorResponse, "description": "Server error"}
     },
-    tags=["search"],
+    tags=["embeddings"],
     summary="Search for similar texts",
     description="""
     Search for texts similar to the query text using vector similarity.
