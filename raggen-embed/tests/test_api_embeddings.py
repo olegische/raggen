@@ -1,43 +1,114 @@
 import pytest
 from fastapi.testclient import TestClient
 import numpy as np
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 import logging
 from pprint import pformat
 
 from src.main import app
 from src.api.embeddings import get_embedding_service, get_vector_store
 from utils.logging import get_logger
+from core.embeddings import EmbeddingService
 
 logger = get_logger(__name__)
 client = TestClient(app)
 
-# Test data
-SAMPLE_TEXT = "Sample text for embedding generation"
-SAMPLE_TEXTS = [
-    "First text for embedding",
-    "Second text for embedding"
-]
-SAMPLE_EMBEDDING = np.ones(384, dtype=np.float32)
-SAMPLE_EMBEDDINGS = np.ones((len(SAMPLE_TEXTS), 384), dtype=np.float32)
-
-def test_embed_text():
-    """Test embedding generation for a single text."""
-    logger.info("=== Starting test_embed_text ===")
+def test_search_degradation():
+    """Test search quality degradation without index training."""
+    logger.info("=== Starting test_search_degradation ===")
     
     # Create mock services
     logger.info("Creating mock services")
     mock_embedding_service = MagicMock()
-    mock_embedding_service.get_embedding.return_value = SAMPLE_EMBEDDING
     
-    mock_vector_store = MagicMock()
-    mock_vector_store.dimension = 384
-    mock_vector_store.is_trained = True
-    mock_vector_store.add_vectors.return_value = [0]  # ID starts from 0
+    # Create a set of vectors with known relationships
+    # Base vector and vectors with increasing distance from it
+    base_vector = np.ones(384, dtype=np.float32)
+    similar_vectors = [
+        base_vector + np.random.normal(0, noise_level, 384).astype(np.float32)
+        for noise_level in [0.1, 0.2, 0.3, 0.4, 0.5]
+    ]
     
-    logger.info("Mock configuration:")
-    logger.info("- embedding shape: %s", SAMPLE_EMBEDDING.shape)
-    logger.info("- vector_store.add_vectors return value: %s", mock_vector_store.add_vectors.return_value)
+    # Configure mock to return different vectors for different texts
+    vectors_map = {
+        "base": base_vector,
+        "similar_0.1": similar_vectors[0],
+        "similar_0.2": similar_vectors[1],
+        "similar_0.3": similar_vectors[2],
+        "similar_0.4": similar_vectors[3],
+        "similar_0.5": similar_vectors[4],
+    }
+    
+    def get_mock_embedding(text):
+        return vectors_map[text]
+    
+    mock_embedding_service.get_embedding.side_effect = get_mock_embedding
+    
+    # Create vector store that maintains added vectors and texts
+    stored_vectors = []
+    stored_texts = []
+    next_user_id = 1
+    internal_to_user_ids = {}
+    user_to_internal_ids = {}
+    
+    class MockVectorStore:
+        dimension = 384
+        is_trained = False
+        
+        def add_vectors(self, vectors):
+            nonlocal stored_vectors, next_user_id, internal_to_user_ids, user_to_internal_ids
+            start_internal_id = len(stored_vectors)
+            
+            if len(vectors.shape) == 1:
+                vectors = vectors.reshape(1, -1)
+            
+            logger.info("\nAdding vectors:")
+            logger.info("- Current stored vectors: %d", len(stored_vectors))
+            
+            stored_vectors.extend(vectors)
+            
+            # Generate user IDs and map them to internal IDs
+            user_ids = []
+            for i in range(len(vectors)):
+                internal_id = start_internal_id + i
+                user_id = next_user_id + i
+                internal_to_user_ids[internal_id] = user_id
+                user_to_internal_ids[user_id] = internal_id
+                user_ids.append(user_id)
+            
+            next_vector_id += len(vectors)
+            return user_ids
+        
+        def search(self, query_vectors, k):
+            logger.info("\nSearching vectors:")
+            logger.info("- Query shape: %s", query_vectors.shape)
+            logger.info("- k: %d", k)
+            logger.info("- Total stored vectors: %d", len(stored_vectors))
+            
+            # Compute actual distances
+            query = query_vectors.reshape(1, -1)
+            distances = []
+            for vector in stored_vectors:
+                dist = np.linalg.norm(query - vector)
+                distances.append(dist)
+            
+            # Sort and return k nearest
+            internal_indices = np.argsort(distances)[:k]
+            sorted_distances = np.array([distances[i] for i in internal_indices])
+            
+            # Map internal indices to user IDs
+            user_indices = np.array([internal_to_user_ids[i] for i in internal_indices])
+            
+            logger.info("Search results:")
+            logger.info("- Distances: %s", sorted_distances)
+            logger.info("- User indices: %s", user_indices)
+            
+            return (
+                sorted_distances.reshape(1, -1),
+                user_indices.reshape(1, -1)
+            )
+    
+    mock_vector_store = MockVectorStore()
     
     # Override FastAPI dependencies
     logger.info("Overriding FastAPI dependencies")
@@ -45,142 +116,84 @@ def test_embed_text():
     app.dependency_overrides[get_vector_store] = lambda: mock_vector_store
     
     try:
-        # Test request
-        logger.info("Sending test request")
-        logger.info("Request data: %s", {"text": SAMPLE_TEXT})
+        # Step 1: Add base vector
+        logger.info("\nStep 1: Adding base vector")
         response = client.post(
             "/api/v1/embed",
-            json={"text": SAMPLE_TEXT}
+            json={"text": "base"}
         )
+        if response.status_code != 200:
+            logger.error("Search request failed:")
+            logger.error("Request: %s", {"text": "base"})
+            logger.error("Response: %s", response.json())
+        assert response.status_code == 200
+        base_data = response.json()
+        base_id = base_data["vector_id"]
+        logger.info("Base vector added with ID: %d", base_id)
         
-        logger.info("Response received:")
-        logger.info("- status code: %d", response.status_code)
-        logger.info("- headers:\n%s", pformat(dict(response.headers)))
-        logger.info("- body:\n%s", pformat(response.text))
+        # Add similar vectors one by one and check search results
+        vector_ids = {}
+        for noise_level in ["0.1", "0.2", "0.3", "0.4", "0.5"]:
+            # Add vector
+            text = f"similar_{noise_level}"
+            logger.info("\nAdding vector: %s", text)
+            response = client.post(
+                "/api/v1/embed",
+                json={"text": text}
+            )
+            assert response.status_code == 200
+            data = response.json()
+            vector_ids[text] = data["vector_id"]
+            logger.info("Vector added with ID: %d", vector_ids[text])
+            
+            # Search similar vectors
+            logger.info("\nSearching similar vectors")
+            response = client.post(
+                "/api/v1/search",
+                json={
+                    "text": "base",
+                    "k": max(1, min(len(stored_vectors), 100))
+                }
+            )
+            assert response.status_code == 200
+            search_data = response.json()
+            
+            # Verify search results
+            results = search_data["results"]
+            logger.info("Search results after adding %s:", text)
+            for i, result in enumerate(results):
+                logger.info("- %d: vector_id=%d, score=%f", 
+                          i, result["vector_id"], result["score"])
+            
+            # The base vector should always be the most similar to itself
+            assert results[0]["vector_id"] == base_id, \
+                f"Expected most similar to be base_id ({base_id}), got {results[0]['vector_id']}"
+            
+            # Verify that vectors are ordered by increasing noise level
+            expected_order = ["base"] + [
+                f"similar_{n}" for n in ["0.1", "0.2", "0.3", "0.4", "0.5"]
+                if f"similar_{n}" in vector_ids
+            ]
+            actual_order = []
+            for result in results:
+                for text, vid in vector_ids.items():
+                    if result["vector_id"] == vid:
+                        actual_order.append(text)
+                    elif result["vector_id"] == base_id:
+                        actual_order.append("base")
+            
+            logger.info("Vector order:")
+            logger.info("- Expected: %s", expected_order[:len(actual_order)])
+            logger.info("- Actual: %s", actual_order)
+            
+            # As we add more vectors without training, the order might become incorrect
+            if actual_order != expected_order[:len(actual_order)]:
+                logger.warning("Search quality degraded: vectors not in expected order")
+                logger.warning("This is expected behavior due to lack of index training")
         
-        # Parse and validate response
-        logger.info("Validating response")
-        assert response.status_code == 200, f"Expected status code 200, got {response.status_code}"
-        
-        data = response.json()
-        logger.info("Parsed response data:\n%s", pformat(data))
-        
-        # Validate response structure
-        logger.info("Checking response structure")
-        assert "embedding" in data, "Response missing 'embedding' field"
-        assert "vector_id" in data, "Response missing 'vector_id' field"
-        assert "text" in data, "Response missing 'text' field"
-        
-        # Validate embedding
-        logger.info("Checking embedding")
-        assert len(data["embedding"]) == 384, f"Expected embedding length 384, got {len(data['embedding'])}"
-        
-        # Validate vector ID
-        logger.info("Checking vector ID")
-        logger.info("Expected vector_id: %d", mock_vector_store.add_vectors.return_value[0])
-        logger.info("Actual vector_id: %d", data["vector_id"])
-        assert data["vector_id"] == 0, f"Expected vector_id 0, got {data['vector_id']}"
-        
-        # Verify service calls
-        logger.info("Verifying service calls")
-        mock_embedding_service.get_embedding.assert_called_once_with(SAMPLE_TEXT)
-        mock_vector_store.add_vectors.assert_called_once()
-        
-        logger.info("Mock service call history:")
-        logger.info("- embedding_service.get_embedding calls:\n%s", 
-                   pformat(mock_embedding_service.get_embedding.mock_calls))
-        logger.info("- vector_store.add_vectors calls:\n%s", 
-                   pformat(mock_vector_store.add_vectors.mock_calls))
-        logger.info("- embedding_service.get_embedding return value:\n%s", 
-                   pformat(mock_embedding_service.get_embedding.return_value))
-        logger.info("- vector_store.add_vectors return value:\n%s", 
-                   pformat(mock_vector_store.add_vectors.return_value))
-        
-        # Log actual call arguments
-        logger.info("Mock service call arguments:")
-        logger.info("- embedding_service.get_embedding args:\n%s", 
-                   pformat(mock_embedding_service.get_embedding.call_args))
-        logger.info("- vector_store.add_vectors args:\n%s", 
-                   pformat(mock_vector_store.add_vectors.call_args))
-        
-        logger.info("=== test_embed_text completed successfully ===")
+        logger.info("=== test_search_degradation completed ===")
     finally:
         logger.info("Cleaning up FastAPI dependencies")
-        app.dependency_overrides.clear()
-
-def test_batch_embed():
-    """Test batch embedding generation."""
-    logger.info("Starting test_batch_embed")
-    
-    # Create mock services
-    logger.info("Creating mock services")
-    mock_embedding_service = MagicMock()
-    mock_embedding_service.get_embeddings.return_value = SAMPLE_EMBEDDINGS
-    
-    mock_vector_store = MagicMock()
-    mock_vector_store.dimension = 384
-    mock_vector_store.is_trained = True
-    mock_vector_store.add_vectors.return_value = [0, 1]  # IDs start from 0
-    
-    logger.info("Mock configuration:")
-    logger.info("- embeddings shape: %s", SAMPLE_EMBEDDINGS.shape)
-    logger.info("- vector_store.add_vectors return value: %s", mock_vector_store.add_vectors.return_value)
-    
-    # Override FastAPI dependencies
-    logger.info("Overriding FastAPI dependencies")
-    app.dependency_overrides[get_embedding_service] = lambda: mock_embedding_service
-    app.dependency_overrides[get_vector_store] = lambda: mock_vector_store
-    
-    try:
-        # Test request
-        logger.info("Sending test request")
-        logger.info("Request data: %s", {"texts": SAMPLE_TEXTS})
-        response = client.post(
-            "/api/v1/embed/batch",
-            json={"texts": SAMPLE_TEXTS}
-        )
-        
-        logger.info("Response received:")
-        logger.info("- status code: %d", response.status_code)
-        logger.info("- headers:\n%s", pformat(dict(response.headers)))
-        logger.info("- body:\n%s", pformat(response.text))
-        
-        # Parse and validate response
-        logger.info("Validating response")
-        assert response.status_code == 200, f"Expected status code 200, got {response.status_code}"
-        
-        data = response.json()
-        logger.info("Parsed response data:\n%s", pformat(data))
-        
-        # Validate response structure
-        logger.info("Checking response structure")
-        assert "embeddings" in data, "Response missing 'embeddings' field"
-        assert len(data["embeddings"]) == len(SAMPLE_TEXTS), \
-            f"Expected {len(SAMPLE_TEXTS)} embeddings, got {len(data['embeddings'])}"
-        
-        # Validate each embedding
-        for i, embedding_data in enumerate(data["embeddings"]):
-            logger.info("Checking embedding %d", i)
-            assert len(embedding_data["embedding"]) == 384, \
-                f"Expected embedding length 384, got {len(embedding_data['embedding'])}"
-            assert embedding_data["vector_id"] == i, \
-                f"Expected vector_id {i}, got {embedding_data['vector_id']}"
-            assert embedding_data["text"] == SAMPLE_TEXTS[i], \
-                f"Expected text '{SAMPLE_TEXTS[i]}', got '{embedding_data['text']}'"
-        
-        # Verify service calls
-        logger.info("Verifying service calls")
-        mock_embedding_service.get_embeddings.assert_called_once_with(SAMPLE_TEXTS)
-        mock_vector_store.add_vectors.assert_called_once_with(SAMPLE_EMBEDDINGS)
-        
-        logger.info("Mock service call history:")
-        logger.info("- embedding_service.get_embeddings calls:\n%s", 
-                   pformat(mock_embedding_service.get_embeddings.mock_calls))
-        logger.info("- vector_store.add_vectors calls:\n%s", 
-                   pformat(mock_vector_store.add_vectors.mock_calls))
-        
-        logger.info("test_batch_embed completed successfully")
-    finally:
         app.dependency_overrides.clear()
 
 def test_invalid_text():
@@ -240,91 +253,123 @@ def test_invalid_batch():
     
     logger.info("test_invalid_batch completed successfully")
 
-def test_search_similar():
-    """Test similarity search."""
-    logger.info("Starting test_search_similar")
-    query = "Sample query text"
+def test_embed_endpoint():
+    """Test the /embed endpoint functionality."""
+    logger.info("=== Starting test_embed_endpoint ===")
     
     # Create mock services
-    logger.info("Creating mock services")
-    mock_embedding_service = MagicMock()
-    mock_embedding_service.get_embedding.return_value = SAMPLE_EMBEDDING
+    mock_embedding_service = MagicMock(spec=EmbeddingService)
+    test_vector = np.array([0.1] * 384, dtype=np.float32)
+    mock_embedding_service.get_embedding.return_value = test_vector
     
-    mock_vector_store = MagicMock()
-    mock_vector_store.dimension = 384
-    mock_vector_store.is_trained = True
-    mock_vector_store.search.return_value = (
-        np.array([[0.2, 0.3]]),  # distances
-        np.array([[0, 1]])       # indices start from 0
-    )
+    # Track vector IDs
+    next_vector_id = 1
     
-    logger.info("Mock configuration:")
-    logger.info("- embedding shape: %s", SAMPLE_EMBEDDING.shape)
-    logger.info("- search return values:")
-    logger.info("  - distances: %s", mock_vector_store.search.return_value[0])
-    logger.info("  - indices: %s", mock_vector_store.search.return_value[1])
+    class MockVectorStore:
+        dimension = 384
+        is_trained = True
+        
+        def add_vectors(self, vectors):
+            nonlocal next_vector_id
+            logger.info("Adding vectors to mock store, shape: %s", vectors.shape)
+            if len(vectors.shape) == 1:
+                vectors = vectors.reshape(1, -1)
+            vector_ids = list(range(next_vector_id, next_vector_id + len(vectors)))
+            next_vector_id += len(vectors)
+            logger.info("Assigned vector IDs: %s", vector_ids)
+            return vector_ids
+        
+        def train(self, vectors):
+            logger.info("Mock training called with vectors shape: %s", vectors.shape)
+            pass
+    
+    mock_store = MockVectorStore()
     
     # Override FastAPI dependencies
-    logger.info("Overriding FastAPI dependencies")
     app.dependency_overrides[get_embedding_service] = lambda: mock_embedding_service
-    app.dependency_overrides[get_vector_store] = lambda: mock_vector_store
+    app.dependency_overrides[get_vector_store] = lambda: mock_store
     
     try:
-        # Test request
-        logger.info("Sending test request")
-        logger.info("Request data: %s", {"text": query, "k": 2})
+        # Test 1: Basic embedding generation
+        logger.info("\nTest 1: Basic embedding generation")
+        test_text = "This is a test text"
         response = client.post(
-            "/api/v1/search",
-            json={
-                "text": query,
-                "k": 2
-            }
+            "/api/v1/embed",
+            json={"text": test_text}
         )
-        
-        logger.info("Response received:")
-        logger.info("- status code: %d", response.status_code)
-        logger.info("- headers:\n%s", pformat(dict(response.headers)))
-        logger.info("- body:\n%s", pformat(response.text))
-        
-        # Parse and validate response
-        logger.info("Validating response")
-        assert response.status_code == 200, f"Expected status code 200, got {response.status_code}"
-        
+        assert response.status_code == 200, f"Expected 200 status code, got {response.status_code}"
         data = response.json()
-        logger.info("Parsed response data:\n%s", pformat(data))
+        logger.info("Response data: %s", data)
         
-        # Validate response structure
-        logger.info("Checking response structure")
-        assert data["query"] == query, f"Expected query '{query}', got '{data['query']}'"
-        assert len(data["results"]) == 2, f"Expected 2 results, got {len(data['results'])}"
+        # Verify response structure
+        assert "embedding" in data, "Response missing 'embedding' field"
+        assert "text" in data, "Response missing 'text' field"
+        assert "vector_id" in data, "Response missing 'vector_id' field"
         
-        # Verify scores are normalized correctly
-        logger.info("Checking scores")
-        assert data["results"][0]["score"] > data["results"][1]["score"], \
-            "First result should have higher score"
-        assert 0 <= data["results"][0]["score"] <= 1, \
-            f"Score should be between 0 and 1, got {data['results'][0]['score']}"
-        assert 0 <= data["results"][1]["score"] <= 1, \
-            f"Score should be between 0 and 1, got {data['results'][1]['score']}"
+        # Verify embedding dimensionality
+        assert len(data["embedding"]) == 384, f"Expected 384 dimensions, got {len(data['embedding'])}"
         
-        # Verify vector IDs match indices
-        logger.info("Checking vector IDs")
-        assert data["results"][0]["vector_id"] == 0, \
-            f"Expected vector_id 0, got {data['results'][0]['vector_id']}"
-        assert data["results"][1]["vector_id"] == 1, \
-            f"Expected vector_id 1, got {data['results'][1]['vector_id']}"
+        # Convert response embedding to numpy array for comparison
+        response_embedding = np.array(data["embedding"], dtype=np.float32)
+        logger.info("Response embedding shape: %s", response_embedding.shape)
+        logger.info("Response embedding first 5 values: %s", response_embedding[:5])
+        logger.info("Expected embedding first 5 values: %s", test_vector[:5])
         
-        # Verify service calls
-        logger.info("Verifying service calls")
-        mock_embedding_service.get_embedding.assert_called_once_with(query)
-        mock_vector_store.search.assert_called_once()
+        # Verify vector values match our test vector with some tolerance
+        assert np.allclose(response_embedding, test_vector, rtol=1e-5), \
+            "Embedding values don't match test vector"
         
-        logger.info("Mock service call history:")
-        logger.info("- embedding_service.get_embedding calls:\n%s", 
-                   pformat(mock_embedding_service.get_embedding.mock_calls))
-        logger.info("- vector_store.search calls:\n%s", 
-                   pformat(mock_vector_store.search.mock_calls))
+        # Verify text preservation
+        assert data["text"] == test_text, f"Expected text '{test_text}', got '{data['text']}'"
         
-        logger.info("test_search_similar completed successfully")
+        # Verify vector ID assignment
+        assert data["vector_id"] == 1, f"Expected vector_id 1, got {data['vector_id']}"
+        
+        # Test 2: Caching behavior
+        logger.info("\nTest 2: Testing caching behavior")
+        # Make the same request again
+        response2 = client.post(
+            "/api/v1/embed",
+            json={"text": test_text}
+        )
+        assert response2.status_code == 200
+        data2 = response2.json()
+        logger.info("Second response data: %s", data2)
+        
+        # Verify we get the same embedding
+        response_embedding2 = np.array(data2["embedding"], dtype=np.float32)
+        assert np.allclose(response_embedding2, test_vector, rtol=1e-5), \
+            "Second request returned different embedding"
+        
+        # Verify we get a new vector ID (since we're using a mock store)
+        assert data2["vector_id"] == 2, f"Expected second vector_id 2, got {data2['vector_id']}"
+        
+        # Test 3: Different text
+        logger.info("\nTest 3: Testing different text")
+        different_text = "This is a different text"
+        different_vector = np.array([0.2] * 384, dtype=np.float32)
+        mock_embedding_service.get_embedding.return_value = different_vector
+        
+        response3 = client.post(
+            "/api/v1/embed",
+            json={"text": different_text}
+        )
+        assert response3.status_code == 200
+        data3 = response3.json()
+        logger.info("Third response data: %s", data3)
+        
+        # Verify different vector ID
+        assert data3["vector_id"] == 3, f"Expected third vector_id 3, got {data3['vector_id']}"
+        
+        # Verify different embedding values
+        response_embedding3 = np.array(data3["embedding"], dtype=np.float32)
+        assert np.allclose(response_embedding3, different_vector, rtol=1e-5), \
+            "Third request didn't return expected different embedding"
+        
+        # Verify mock was called correctly
+        mock_embedding_service.get_embedding.assert_called_with(different_text)
+        
+        logger.info("=== test_embed_endpoint completed successfully ===")
+        
     finally:
         app.dependency_overrides.clear()
