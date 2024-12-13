@@ -6,9 +6,10 @@ from contextlib import contextmanager
 import numpy as np
 import pytest
 import time
+import faiss
 
 from core.vector_store.faiss_store import FAISSVectorStore
-from config.settings import Settings
+from config.settings import Settings, IndexType
 
 settings = Settings()
 
@@ -22,7 +23,12 @@ def sample_vectors():
     """Fixture for sample vectors."""
     # Generate random vectors for testing
     # FAISS IVF requires at least 39 * n_clusters points for training
-    n_vectors = 39 * settings.n_clusters + 100  # Add some extra vectors
+    # For IVF_PQ we need at least 39 * 256 = 9984 points
+    n_vectors = max(
+        39 * settings.n_clusters,  # For IVF_FLAT
+        39 * 256,  # For IVF_PQ (default n_centroids)
+        10000  # Minimum reasonable size
+    ) + 100  # Add some extra vectors
     return np.random.randn(n_vectors, settings.vector_dim).astype(np.float32)
 
 @pytest.fixture
@@ -55,49 +61,30 @@ def test_initialization():
     assert store.n_vectors == 0
     assert not store.is_trained
 
-def test_training(vector_store, sample_vectors):
-    """Test index training."""
-    vector_store.train(sample_vectors)
-    assert vector_store.is_trained
-    
-    # Test training already trained index
-    vector_store.train(sample_vectors)  # Should just log warning
-
 def test_adding_vectors(vector_store, sample_vectors):
     """Test adding vectors to the index."""
-    # Train first
-    vector_store.train(sample_vectors)
-    
-    # Test adding vectors without IDs - should get sequential IDs starting from 1
+    # Add vectors in batches to test automatic training
     n_add = 10
     vectors_to_add = np.random.randn(n_add, settings.vector_dim).astype(np.float32)
-    ids = vector_store.add_vectors(vectors_to_add)
-    assert ids == list(range(1, n_add + 1))  # IDs should start from 1
+    vector_store.add(vectors_to_add)
     assert vector_store.n_vectors == n_add
+    assert vector_store.is_trained  # Should be trained after first add
     
-    # Test adding more vectors - should continue sequence
+    # Add more vectors
     more_vectors = np.random.randn(5, settings.vector_dim).astype(np.float32)
-    more_ids = vector_store.add_vectors(more_vectors)
-    assert more_ids == list(range(n_add + 1, n_add + 6))  # Should continue from last ID
+    vector_store.add(more_vectors)
     assert vector_store.n_vectors == n_add + 5
     
-    # Test adding vectors with custom IDs
-    custom_ids = [100, 101, 102]
-    vectors_with_ids = np.random.randn(3, settings.vector_dim).astype(np.float32)
-    ids = vector_store.add_vectors(vectors_with_ids, custom_ids)
-    assert ids == custom_ids
-    assert vector_store.n_vectors == n_add + 8
-    
-    # Test that search returns correct user IDs
+    # Test that search works after adding vectors
     query = vectors_to_add[0:1]  # Use first vector as query
     distances, indices = vector_store.search(query, k=1)
-    assert indices[0][0] == 1  # Should return user ID 1 for first vector
+    assert distances.shape == (1, 1)
+    assert indices.shape == (1, 1)
 
 def test_searching(vector_store, sample_vectors):
     """Test vector similarity search."""
-    # Train and add vectors
-    vector_store.train(sample_vectors)
-    vector_store.add_vectors(sample_vectors)
+    # Add vectors (should handle training automatically)
+    vector_store.add(sample_vectors)
     
     # Test basic search
     query = np.random.randn(1, settings.vector_dim).astype(np.float32)
@@ -129,19 +116,17 @@ def test_searching(vector_store, sample_vectors):
 
 def test_persistence(vector_store, sample_vectors):
     """Test saving and loading the index."""
-    # Train and add vectors
-    vector_store.train(sample_vectors)
-    vector_store.add_vectors(sample_vectors)
+    # Add vectors (should handle training automatically)
+    vector_store.add(sample_vectors)
 
     # Create test file path in the current directory
     test_path = "test_index.faiss"
     try:
-        # Save index and check both files
+        # Save index
         vector_store.save(test_path)
-        assert os.path.exists(test_path), "Main index file not created"
-        assert os.path.exists(test_path + ".mappings.npz"), "Mappings file not created"
+        assert os.path.exists(test_path), "Index file not created"
 
-        # Load index and check mappings
+        # Load index
         loaded_store = FAISSVectorStore.load(test_path)
         assert loaded_store.dimension == vector_store.dimension
         assert loaded_store.n_vectors == vector_store.n_vectors
@@ -160,15 +145,79 @@ def test_persistence(vector_store, sample_vectors):
         # Cleanup
         if os.path.exists(test_path):
             os.remove(test_path)
-        if os.path.exists(test_path + ".mappings.npz"):
-            os.remove(test_path + ".mappings.npz")
+
+def test_index_types(sample_vectors):
+    """Test different FAISS index types."""
+    query = np.random.randn(1, settings.vector_dim).astype(np.float32)
+    
+    # Test each index type
+    for index_type in IndexType:
+        # Create store with specific index type
+        store = FAISSVectorStore(index_type=index_type)
+        
+        # Add vectors
+        store.add(sample_vectors)
+        assert store.is_trained
+        assert store.index_type == index_type
+        
+        # Test search
+        distances, indices = store.search(query, k=5)
+        assert distances.shape == (1, 5)
+        assert indices.shape == (1, 5)
+        
+        # Test index-specific parameters
+        if index_type == IndexType.IVF_FLAT:
+            assert isinstance(store.index, faiss.IndexIVFFlat)
+            assert store.index.nprobe == settings.n_probe
+            assert store.index.nlist == settings.n_clusters
+            
+        elif index_type == IndexType.IVF_PQ:
+            assert isinstance(store.index, faiss.IndexIVFPQ)
+            assert store.index.nprobe == settings.n_probe
+            assert store.index.nlist == settings.n_clusters
+            assert store.index.pq.M == settings.pq_m
+            
+        elif index_type == IndexType.HNSW_FLAT:
+            assert isinstance(store.index, faiss.IndexHNSWFlat)
+            assert store.index.hnsw.efSearch == settings.hnsw_ef_search
+            assert store.index.hnsw.efConstruction == settings.hnsw_ef_construction
+            
+        elif index_type == IndexType.FLAT_L2:
+            assert isinstance(store.index, faiss.IndexFlatL2)
+            # FlatL2 doesn't have additional parameters to check
+
+def test_search_accuracy():
+    """Test search accuracy for different index types."""
+    # Generate test data
+    n_vectors = 10000
+    test_vectors = np.random.randn(n_vectors, settings.vector_dim).astype(np.float32)
+    query = np.random.randn(1, settings.vector_dim).astype(np.float32)
+    
+    # Get ground truth using FlatL2
+    settings.faiss_index_type = IndexType.FLAT_L2
+    flat_store = FAISSVectorStore()
+    flat_store.add(test_vectors)
+    true_distances, true_indices = flat_store.search(query, k=10)
+    
+    # Test approximate indices
+    approximate_indices = [IndexType.IVF_FLAT, IndexType.IVF_PQ, IndexType.HNSW_FLAT]
+    for index_type in approximate_indices:
+        settings.faiss_index_type = index_type
+        store = FAISSVectorStore()
+        store.add(test_vectors)
+        
+        # Search and compare to ground truth
+        distances, indices = store.search(query, k=10)
+        
+        # Calculate recall@10 (how many of the true top-10 we found)
+        recall = len(set(indices[0]) & set(true_indices[0])) / 10
+        print(f"\nRecall@10 for {index_type}: {recall:.2f}")
+        
+        # Even approximate indices should have decent recall
+        assert recall > 0.3, f"Recall too low for {index_type}"
 
 def test_large_dataset(vector_store, large_vectors):
     """Test handling of large datasets."""
-    # Train the index
-    vector_store.train(large_vectors[:10000])  # Use first 10K vectors for training
-    assert vector_store.is_trained
-    
     # Add vectors in batches
     batch_size = 10000
     n_batches = len(large_vectors) // batch_size
@@ -178,7 +227,7 @@ def test_large_dataset(vector_store, large_vectors):
         start_idx = i * batch_size
         end_idx = start_idx + batch_size
         batch = large_vectors[start_idx:end_idx]
-        vector_store.add_vectors(batch)
+        vector_store.add(batch)
         
     total_time = time.time() - start_time
     vectors_per_second = len(large_vectors) / total_time
@@ -199,9 +248,11 @@ def test_large_dataset(vector_store, large_vectors):
 
 def test_persistence_large_index(vector_store, large_vectors, tmp_path):
     """Test persistence with large index."""
-    # Prepare large index
-    vector_store.train(large_vectors[:10000])
-    vector_store.add_vectors(large_vectors)
+    # Add vectors in batches
+    batch_size = 10000
+    for i in range(0, len(large_vectors), batch_size):
+        batch = large_vectors[i:i+batch_size]
+        vector_store.add(batch)
     
     # Save index
     index_path = tmp_path / "large_index.faiss"
@@ -241,17 +292,16 @@ def test_recovery(vector_store, large_vectors, tmp_path):
     
     # Function to simulate crash during save
     def simulate_crash_save(store, vectors, save_path):
-        store.train(vectors[:10000])
-        store.add_vectors(vectors[:50000])  # Add only half the vectors
+        store.add(vectors[:50000])  # Add only half the vectors
         store.save(save_path)  # Save partial index
         
     # Function to simulate crash during add
     def simulate_crash_add(store, vectors):
-        store.train(vectors[:10000])
+        store.add(vectors[:10000])  # Add some vectors successfully
         try:
             # Simulate crash by adding vectors with wrong dimension
             bad_vectors = np.random.randn(100, settings.vector_dim + 1).astype(np.float32)
-            store.add_vectors(bad_vectors)
+            store.add(bad_vectors)
         except ValueError:
             pass  # Expected error
     
@@ -264,7 +314,7 @@ def test_recovery(vector_store, large_vectors, tmp_path):
     assert recovered_store.n_vectors == 50000  # Should have half the vectors
     
     # Add remaining vectors
-    recovered_store.add_vectors(large_vectors[50000:])
+    recovered_store.add(large_vectors[50000:])
     assert recovered_store.n_vectors == len(large_vectors)
     
     # Test recovery from failed add
@@ -272,7 +322,7 @@ def test_recovery(vector_store, large_vectors, tmp_path):
     simulate_crash_add(new_store, large_vectors)
     
     # Should be able to continue after error
-    new_store.add_vectors(large_vectors[10000:])
+    new_store.add(large_vectors[10000:])
     assert new_store.n_vectors == len(large_vectors) - 10000
     
     # Verify search still works

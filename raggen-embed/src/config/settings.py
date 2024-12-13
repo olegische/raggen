@@ -1,6 +1,15 @@
-from typing import List
+from typing import List, Literal
 from pydantic_settings import BaseSettings
 from pydantic import Field
+from enum import Enum
+
+
+class IndexType(str, Enum):
+    """Available FAISS index types."""
+    FLAT_L2 = "flat_l2"  # Exact search, no training needed
+    IVF_FLAT = "ivf_flat"  # Approximate search with clustering, requires training
+    IVF_PQ = "ivf_pq"  # Compressed vectors with clustering, requires training
+    HNSW_FLAT = "hnsw_flat"  # Graph-based search, no training but has parameters
 
 
 class Settings(BaseSettings):
@@ -105,16 +114,58 @@ class Settings(BaseSettings):
     )
     
     # FAISS settings
+    faiss_index_type: IndexType = Field(
+        default=IndexType.FLAT_L2,  # Changed default to FLAT_L2 for exact search
+        description="Type of FAISS index to use. Options:\n"
+                   "- flat_l2: Exact search, no training needed (best for accurate paragraph search)\n"
+                   "- ivf_flat: Approximate search with clustering, requires training (faster but less accurate)\n"
+                   "- ivf_pq: Compressed vectors with clustering, requires training (memory efficient)\n"
+                   "- hnsw_flat: Graph-based search, no training but has parameters (good balance)",
+        env="FAISS_INDEX_TYPE"
+    )
+    
+    # IVF settings (used by ivf_flat and ivf_pq)
     n_clusters: int = Field(
         default=100,
-        description="Number of clusters for IVF index",
+        description="Number of clusters for IVF index (used by ivf_flat and ivf_pq)",
         env="N_CLUSTERS"
     )
     n_probe: int = Field(
         default=10,
-        description="Number of clusters to probe during search",
+        description="Number of clusters to probe during search (used by ivf_flat and ivf_pq)",
         env="N_PROBE"
     )
+    
+    # PQ settings (used by ivf_pq)
+    pq_m: int = Field(
+        default=8,
+        description="Number of sub-vectors in Product Quantization (used by ivf_pq). Must divide vector_dim evenly.",
+        env="PQ_M"
+    )
+    pq_bits: int = Field(
+        default=8,
+        description="Number of bits per sub-vector in Product Quantization (used by ivf_pq). Must be 8, 12, or 16.",
+        env="PQ_BITS"
+    )
+    
+    # HNSW settings (used by hnsw_flat)
+    hnsw_m: int = Field(
+        default=16,
+        description="Number of neighbors for HNSW graph (used by hnsw_flat)",
+        env="HNSW_M"
+    )
+    hnsw_ef_construction: int = Field(
+        default=40,
+        description="Exploration factor during HNSW construction (used by hnsw_flat)",
+        env="HNSW_EF_CONSTRUCTION"
+    )
+    hnsw_ef_search: int = Field(
+        default=16,
+        description="Exploration factor during HNSW search (used by hnsw_flat)",
+        env="HNSW_EF_SEARCH"
+    )
+    
+    # General search settings
     n_results: int = Field(
         default=5,
         description="Default number of results to return",
@@ -157,3 +208,8 @@ class Settings(BaseSettings):
         description="Strategy for merging paragraph embeddings (mean or weighted)",
         env="EMBEDDING_MERGE_STRATEGY"
     )
+    
+    @property
+    def requires_training(self) -> bool:
+        """Check if the current index type requires training."""
+        return self.faiss_index_type in {IndexType.IVF_FLAT, IndexType.IVF_PQ}
