@@ -36,13 +36,13 @@ class PersistentStore(VectorStore):
         # Create directory if it doesn't exist
         os.makedirs(self.store_dir, exist_ok=True)
         
-        # Try to load existing index or create new one
+        # Try to load existing index or use provided store
         if os.path.exists(self.index_path):
             logger.info("Loading existing index from %s", self.index_path)
             self.store = FAISSVectorStore.load(self.index_path)
         else:
-            logger.info("Creating new store")
-            self.store = store or FAISSVectorStore()
+            logger.info("Using provided store or creating new one")
+            self.store = store if store is not None else FAISSVectorStore()
             if self.auto_save:
                 self.store.save(self.index_path)
     

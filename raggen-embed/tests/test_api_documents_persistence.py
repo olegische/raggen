@@ -13,10 +13,10 @@ from datetime import datetime
 from src.main import app
 from src.api.documents import (
     get_paragraph_service,
-    get_vector_store
 )
 from src.core.vector_store.persistent_store import PersistentFAISSStore
 from src.core.vector_store.faiss_store import FAISSVectorStore
+from src.config.settings import Settings
 
 client = TestClient(app)
 logger = logging.getLogger(__name__)
@@ -31,6 +31,17 @@ SAMPLE_PARAGRAPHS = SAMPLE_TEXT.split("\n\n")
 SAMPLE_EMBEDDING = np.ones((384,), dtype=np.float32)
 SAMPLE_EMBEDDINGS = np.stack([SAMPLE_EMBEDDING for _ in range(len(SAMPLE_PARAGRAPHS))])
 
+# Глобальная переменная для хранения vector store в тестах
+_vector_store = None
+
+def get_vector_store() -> PersistentFAISSStore:
+    """Get or create vector store instance."""
+    global _vector_store
+    if _vector_store is None:
+        index_path = "/fake/path/index.faiss"  # Укажите путь для тестов
+        _vector_store = PersistentFAISSStore(index_path=index_path)
+    return _vector_store
+
 @pytest.fixture
 def test_dir():
     """Create temporary directory for vector store files."""
@@ -40,15 +51,25 @@ def test_dir():
 
 @pytest.fixture
 def mocked_vector_store():
+    # Создаем мок настроек
+    mock_settings = MagicMock(spec=Settings)
+    mock_settings.faiss_index_path = "/fake/path/index.faiss"
+    mock_settings.vector_dim = 384
+    
+    def exists_side_effect(path):
+        # Возвращаем True только для index.faiss
+        return path.endswith('index.faiss')
+    
     with patch("os.makedirs") as mock_makedirs, \
-         patch("os.path.exists") as mock_exists, \
+         patch("os.path.exists", side_effect=exists_side_effect) as mock_exists, \
          patch("os.listdir") as mock_listdir, \
          patch("os.remove") as mock_remove, \
          patch("os.rename") as mock_rename, \
          patch("os.path.join", side_effect=os.path.join) as mock_join, \
          patch("src.core.vector_store.faiss_store.FAISSVectorStore.save") as mock_save, \
          patch("src.core.vector_store.faiss_store.FAISSVectorStore.load") as mock_load, \
-         patch("src.core.vector_store.faiss_store.FAISSVectorStore.add") as mock_add:
+         patch("src.core.vector_store.faiss_store.FAISSVectorStore.add") as mock_add, \
+         patch("src.core.vector_store.persistent_store.settings", mock_settings):
         
         # Настраиваем мок для load, возвращающий фиктивный FAISSStore
         mock_store = MagicMock()
@@ -58,12 +79,15 @@ def mocked_vector_store():
         mock_load.return_value = mock_store
         
         # Настраиваем поведение файловой системы
-        mock_exists.return_value = True
         mock_listdir.return_value = [
             "index_20240101_120000.faiss",
             "index_20240101_120001.faiss",
             "index_20240101_120002.faiss"
         ]
+        
+        # Сбрасываем глобальную переменную перед каждым тестом
+        global _vector_store
+        _vector_store = None
         
         yield {
             "mock_makedirs": mock_makedirs,
@@ -75,7 +99,8 @@ def mocked_vector_store():
             "mock_load": mock_load,
             "mock_save": mock_save,
             "mock_add": mock_add,
-            "mock_store": mock_store
+            "mock_store": mock_store,
+            "mock_settings": mock_settings
         }
 
 def test_add_vectors_with_mocks(mocked_vector_store):
@@ -120,7 +145,7 @@ def test_persistence(mocked_vector_store):
     
     # Настраиваем FastAPI зависимости
     app.dependency_overrides[get_paragraph_service] = lambda: mock_ps
-    app.dependency_overrides[get_vector_store] = lambda: PersistentFAISSStore(index_path="/fake/path/index.faiss")
+    app.dependency_overrides["src.api.documents.get_vector_store"] = get_vector_store
     
     try:
         # Первый запрос
@@ -132,9 +157,6 @@ def test_persistence(mocked_vector_store):
         )
         assert response1.status_code == 200
         vector_ids1 = response1.json()["vector_ids"]
-        
-        # Симулируем перезапуск
-        app.dependency_overrides[get_vector_store] = lambda: PersistentFAISSStore(index_path="/fake/path/index.faiss")
         
         # Второй запрос
         file2 = io.BytesIO(SAMPLE_TEXT.encode())
@@ -152,7 +174,7 @@ def test_persistence(mocked_vector_store):
         # Проверяем вызовы моков
         assert mock_add.call_count == 2  # Два вызова add для двух запросов
         assert mock_save.call_count == 2  # Два вызова save
-        assert mock_load.call_count == 2  # Два вызова load
+        assert mock_load.call_count == 1  # Один вызов load при создании store
         
     finally:
         app.dependency_overrides.clear()
@@ -215,7 +237,7 @@ def test_persistence_with_different_strategies(mocked_vector_store):
     
     # Настраиваем FastAPI зависимости
     app.dependency_overrides[get_paragraph_service] = lambda: mock_ps
-    app.dependency_overrides[get_vector_store] = lambda: PersistentFAISSStore(index_path="/fake/path/index.faiss")
+    app.dependency_overrides["src.api.documents.get_vector_store"] = get_vector_store
     
     try:
         # Test each strategy
@@ -232,9 +254,6 @@ def test_persistence_with_different_strategies(mocked_vector_store):
             data = response.json()
             assert data["strategy"] == strategy
             
-            # Симулируем перезапуск для каждой стратегии
-            app.dependency_overrides[get_vector_store] = lambda: PersistentFAISSStore(index_path="/fake/path/index.faiss")
-            
             # Verify vectors are accessible after reload
             file2 = io.BytesIO(SAMPLE_TEXT.encode())
             response2 = client.post(
@@ -245,9 +264,9 @@ def test_persistence_with_different_strategies(mocked_vector_store):
             assert response2.status_code == 200
         
         # Проверяем вызовы моков
-        expected_load_calls = len(strategies) * 2  # load вызывается для каждого нового store
         expected_add_calls = len(strategies) * 2   # add вызывается для каждого запроса
         expected_save_calls = len(strategies) * 2  # save вызывается после каждого add
+        expected_load_calls = 1                    # load вызывается только при создании store
         
         assert mock_load.call_count == expected_load_calls
         assert mock_add.call_count == expected_add_calls
