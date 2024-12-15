@@ -1,26 +1,25 @@
 import os
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 import time
 
 import numpy as np
 import faiss
 
+from .base import VectorStore
 from config.settings import Settings, IndexType
 from utils.logging import get_logger
 
 settings = Settings()
 logger = get_logger(__name__)
 
-class FAISSVectorStore:
-    """
-    Vector store implementation using FAISS.
+class FAISSVectorStore(VectorStore):
+    """Vector store implementation using FAISS."""
     
-    This class provides a simple interface for storing and searching vectors using FAISS.
-    The type of index used is configured through settings (flat_l2, ivf_flat, ivf_pq, hnsw_flat).
-    Training (if required) is handled automatically when adding vectors.
-    """
-    
-    def __init__(self, dimension: int = settings.vector_dim, index_type: Optional[IndexType] = None):
+    def __init__(
+        self,
+        dimension: Optional[int] = None,
+        index_type: Optional[IndexType] = None
+    ):
         """
         Initialize FAISS vector store.
         
@@ -28,8 +27,8 @@ class FAISSVectorStore:
             dimension: Vector dimension (default: from settings)
             index_type: Type of FAISS index to use (default: from settings)
         """
-        logger.info("Initializing FAISS vector store with dimension: %d", dimension)
-        self.dimension = dimension
+        logger.info("Initializing FAISS vector store")
+        self.dimension = dimension or settings.vector_dim
         self.index_type = index_type or settings.faiss_index_type
         
         # Create index based on settings

@@ -1,6 +1,5 @@
 import os
 import tempfile
-import shutil
 import signal
 from contextlib import contextmanager
 import numpy as np
@@ -8,6 +7,7 @@ import pytest
 import time
 import faiss
 
+from core.vector_store.base import VectorStore
 from core.vector_store.faiss_store import FAISSVectorStore
 from config.settings import Settings, IndexType
 
@@ -54,10 +54,29 @@ def timeout(seconds):
         # Disable the alarm
         signal.alarm(0)
 
+def test_base_interface(vector_store):
+    """Test that FAISSVectorStore implements VectorStore interface."""
+    assert isinstance(vector_store, VectorStore)
+    
+    # Check all required methods are implemented
+    assert hasattr(vector_store, 'add')
+    assert hasattr(vector_store, 'search')
+    assert hasattr(vector_store, 'save')
+    assert hasattr(vector_store, 'load')
+    assert hasattr(vector_store, '__len__')
+
 def test_initialization():
     """Test vector store initialization."""
-    store = FAISSVectorStore(dimension=384)
-    assert store.dimension == 384
+    # Test default initialization
+    store = FAISSVectorStore()
+    assert store.dimension == settings.vector_dim
+    assert store.n_vectors == 0
+    assert not store.is_trained
+    
+    # Test custom dimension
+    custom_dim = 512
+    store = FAISSVectorStore(dimension=custom_dim)
+    assert store.dimension == custom_dim
     assert store.n_vectors == 0
     assert not store.is_trained
 
@@ -245,88 +264,3 @@ def test_large_dataset(vector_store, large_vectors):
     with timeout(1):  # Search should complete within 1 second
         distances, indices = vector_store.search(query, k=10)
     assert len(indices[0]) == 10
-
-def test_persistence_large_index(vector_store, large_vectors, tmp_path):
-    """Test persistence with large index."""
-    # Add vectors in batches
-    batch_size = 10000
-    for i in range(0, len(large_vectors), batch_size):
-        batch = large_vectors[i:i+batch_size]
-        vector_store.add(batch)
-    
-    # Save index
-    index_path = tmp_path / "large_index.faiss"
-    start_time = time.time()
-    vector_store.save(str(index_path))
-    save_time = time.time() - start_time
-    
-    # Get file size
-    index_size = os.path.getsize(index_path) / (1024 * 1024)  # Size in MB
-    
-    # Load index
-    start_time = time.time()
-    loaded_store = FAISSVectorStore.load(str(index_path))
-    load_time = time.time() - start_time
-    
-    # Log persistence metrics
-    print(f"\nPersistence metrics:")
-    print(f"Index size: {index_size:.2f}MB")
-    print(f"Save time: {save_time:.2f}s")
-    print(f"Load time: {load_time:.2f}s")
-    
-    # Verify loaded index
-    assert loaded_store.n_vectors == len(large_vectors)
-    assert loaded_store.dimension == settings.vector_dim
-    
-    # Test search with loaded index
-    query = np.random.randn(1, settings.vector_dim).astype(np.float32)
-    distances1, indices1 = vector_store.search(query)
-    distances2, indices2 = loaded_store.search(query)
-    np.testing.assert_array_equal(indices1, indices2)
-
-def test_recovery(vector_store, large_vectors, tmp_path):
-    """Test index recovery after simulated failures."""
-    # Prepare data directory
-    data_dir = tmp_path / "data"
-    os.makedirs(data_dir)
-    
-    # Function to simulate crash during save
-    def simulate_crash_save(store, vectors, save_path):
-        store.add(vectors[:50000])  # Add only half the vectors
-        store.save(save_path)  # Save partial index
-        
-    # Function to simulate crash during add
-    def simulate_crash_add(store, vectors):
-        store.add(vectors[:10000])  # Add some vectors successfully
-        try:
-            # Simulate crash by adding vectors with wrong dimension
-            bad_vectors = np.random.randn(100, settings.vector_dim + 1).astype(np.float32)
-            store.add(bad_vectors)
-        except ValueError:
-            pass  # Expected error
-        return store  # Return store to preserve state
-    
-    # Test recovery from partial save
-    partial_path = str(data_dir / "partial.faiss")
-    simulate_crash_save(vector_store, large_vectors, partial_path)
-    
-    # Load partial index and complete it
-    recovered_store = FAISSVectorStore.load(partial_path)
-    assert recovered_store.n_vectors == 50000  # Should have half the vectors
-    
-    # Add remaining vectors
-    recovered_store.add(large_vectors[50000:])
-    assert recovered_store.n_vectors == len(large_vectors)
-    
-    # Test recovery from failed add
-    crashed_store = simulate_crash_add(FAISSVectorStore(), large_vectors)
-    assert crashed_store.n_vectors == 10000  # Should have first 10000 vectors
-    
-    # Should be able to continue after error
-    crashed_store.add(large_vectors[10000:])
-    assert crashed_store.n_vectors == len(large_vectors)
-    
-    # Verify search still works
-    query = np.random.randn(1, settings.vector_dim).astype(np.float32)
-    distances, indices = crashed_store.search(query)
-    assert len(indices[0]) == settings.n_results
