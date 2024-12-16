@@ -208,20 +208,31 @@ class FAISSVectorStore(VectorStore):
             raise
     
     @classmethod
-    def load(cls, path: str, settings: Settings) -> 'FAISSVectorStore':
+    def load(cls, path: Optional[str] = None, settings: Optional[Settings] = None) -> 'FAISSVectorStore':
         """
         Load an index from disk.
         
         Args:
-            path: Path to load the index from
-            settings: Settings instance (required)
+            path: Optional path to load the index from
+            settings: Optional Settings instance
             
         Returns:
             Loaded vector store
+        
+        Raises:
+            ValueError: If both path and settings are None
         """
-        if not settings:
-            raise ValueError("Settings must be provided")
-            
+        if path is None and settings is None:
+            raise ValueError("Either path or settings must be provided")
+        
+        if settings is None:
+            # Если settings не предоставлены, создаем экземпляр с дефолтными настройками
+            settings = Settings()
+        
+        if path is None:
+            # Если path не предоставлен, используем значение из settings
+            path = settings.faiss_index_path
+        
         logger.info("Loading index from: %s", path)
         start_time = time.time()
         

@@ -5,7 +5,7 @@ import warnings
 import numpy as np
 
 from .base import VectorStore
-from .faiss_store import FAISSVectorStore
+from .vector_store_factory import VectorStoreFactory, VectorStoreType
 from config.settings import Settings
 from utils.logging import get_logger
 
@@ -69,10 +69,11 @@ class PersistentStore(VectorStore):
         # Try to load existing index or use provided store
         if os.path.exists(self.index_path):
             logger.info("[PersistentStore] Loading existing index from %s", self.index_path)
-            self.store = FAISSVectorStore.load(self.index_path, settings=self.settings)
+            self.store = VectorStoreFactory.create(VectorStoreType.FAISS, settings)
+            self.store.load(self.index_path)
         else:
             logger.info("[PersistentStore] Using provided store or creating new one")
-            self.store = store if store is not None else FAISSVectorStore(settings=self.settings)
+            self.store = store if store is not None else VectorStoreFactory.create(VectorStoreType.FAISS, settings)
             if self.auto_save:
                 logger.info("[PersistentStore] Auto-saving new store to %s", self.index_path)
                 self.store.save(self.index_path)
@@ -137,7 +138,7 @@ class PersistentStore(VectorStore):
             logger.info("[PersistentStore] Using provided path: %s", path)
             
         # Create store and load index
-        store = FAISSVectorStore(settings=settings)
+        store = VectorStoreFactory.create(VectorStoreType.FAISS, settings)
         store.load(path)
         
         # Create persistent store with loaded index
@@ -173,7 +174,7 @@ class PersistentStore(VectorStore):
             except OSError as e:
                 logger.error("[PersistentStore] Failed to create backup: %s", str(e))
                 backup_path = None
-                raise  # Пробрасываем OSError
+                raise
             except Exception as e:
                 logger.error("[PersistentStore] Failed to create backup: %s", str(e))
                 backup_path = None
@@ -194,7 +195,7 @@ class PersistentStore(VectorStore):
                     logger.info("[PersistentStore] Restored backup after failed save")
                 except Exception as restore_error:
                     logger.error("[PersistentStore] Failed to restore backup: %s", str(restore_error))
-            raise  # Пробрасываем OSError
+            raise
         except Exception as e:
             logger.error("[PersistentStore] Failed to save index: %s", str(e))
             # If save fails and we have a backup, restore it

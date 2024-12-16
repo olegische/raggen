@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 import numpy as np
-from typing import Tuple
+from typing import Tuple, Optional
 import logging
+from config.settings import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -49,12 +50,13 @@ class VectorStore(ABC):
     
     @classmethod
     @abstractmethod
-    def load(cls, path: str) -> 'VectorStore':
+    def load(cls, path: Optional[str] = None, settings: Optional[Settings] = None) -> 'VectorStore':
         """
         Load a store from disk.
         
         Args:
-            path: Path to load from
+            path: Optional path to load from
+            settings: Optional Settings instance
             
         Returns:
             New instance of VectorStore
