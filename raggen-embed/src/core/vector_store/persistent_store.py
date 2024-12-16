@@ -27,6 +27,11 @@ class PersistentStore(VectorStore):
             settings: Settings instance (required)
             store: Vector store instance to wrap (default: new FAISSVectorStore)
             auto_save: Whether to automatically save after modifications
+            
+        Raises:
+            ValueError: If settings is not provided
+            TypeError: If store is provided but not a VectorStore instance
+            RuntimeError: If directory creation or access fails
         """
         if not settings:
             raise ValueError("Settings must be provided")
@@ -45,9 +50,17 @@ class PersistentStore(VectorStore):
         self.auto_save = auto_save
         logger.info("[PersistentStore] Auto-save enabled: %s", self.auto_save)
         
-        # Create directory if it doesn't exist
-        logger.info("[PersistentStore] Creating directory: %s", self.store_dir)
-        os.makedirs(self.store_dir, exist_ok=True)
+        # Create directory if it doesn't exist and check permissions
+        try:
+            logger.info("[PersistentStore] Creating directory: %s", self.store_dir)
+            os.makedirs(self.store_dir, exist_ok=True)
+            
+            # Check write permissions
+            if not os.access(self.store_dir, os.W_OK):
+                raise OSError(f"Directory {self.store_dir} is not writable")
+        except OSError as e:
+            logger.error("[PersistentStore] Failed to initialize store directory: %s", str(e))
+            raise RuntimeError(f"Failed to initialize store directory: {e}")
         
         # Validate store type if provided
         if store is not None and not isinstance(store, VectorStore):
@@ -86,6 +99,10 @@ class PersistentStore(VectorStore):
         
         Args:
             path: Optional override path (default: use path from settings)
+            
+        Raises:
+            OSError: If directory is not writable or disk space issues
+            RuntimeError: If save operation fails for other reasons
         """
         logger.info("[PersistentStore] Explicit save requested")
         save_path = path or self.index_path
@@ -102,6 +119,10 @@ class PersistentStore(VectorStore):
             
         Returns:
             New instance of PersistentStore
+            
+        Raises:
+            ValueError: If settings is not provided
+            RuntimeError: If load operation fails
         """
         if not settings:
             raise ValueError("Settings must be provided")
@@ -128,7 +149,16 @@ class PersistentStore(VectorStore):
         
         Args:
             path: Optional override path (default: use path from settings)
+            
+        Raises:
+            OSError: If directory is not writable or disk space issues
+            RuntimeError: If save operation fails for other reasons
         """
+        # Check write permissions
+        if not os.access(self.store_dir, os.W_OK):
+            logger.error("[PersistentStore] Directory %s is not writable", self.store_dir)
+            raise OSError(f"Directory {self.store_dir} is not writable")
+            
         save_path = path or self.index_path
         logger.info("[PersistentStore] Saving to path: %s", save_path)
         backup_path = None
@@ -140,6 +170,10 @@ class PersistentStore(VectorStore):
             try:
                 os.rename(save_path, backup_path)
                 logger.info("[PersistentStore] Created backup at %s", backup_path)
+            except OSError as e:
+                logger.error("[PersistentStore] Failed to create backup: %s", str(e))
+                backup_path = None
+                raise  # Пробрасываем OSError
             except Exception as e:
                 logger.error("[PersistentStore] Failed to create backup: %s", str(e))
                 backup_path = None
@@ -151,6 +185,16 @@ class PersistentStore(VectorStore):
             
             # Cleanup old backups
             self._cleanup_old_backups()
+        except OSError as e:
+            logger.error("[PersistentStore] Failed to save index: %s", str(e))
+            # If save fails and we have a backup, restore it
+            if backup_path and os.path.exists(backup_path):
+                try:
+                    os.rename(backup_path, save_path)
+                    logger.info("[PersistentStore] Restored backup after failed save")
+                except Exception as restore_error:
+                    logger.error("[PersistentStore] Failed to restore backup: %s", str(restore_error))
+            raise  # Пробрасываем OSError
         except Exception as e:
             logger.error("[PersistentStore] Failed to save index: %s", str(e))
             # If save fails and we have a backup, restore it
@@ -160,7 +204,7 @@ class PersistentStore(VectorStore):
                     logger.info("[PersistentStore] Restored backup after failed save")
                 except Exception as restore_error:
                     logger.error("[PersistentStore] Failed to restore backup: %s", str(restore_error))
-            raise
+            raise RuntimeError(f"Failed to save index: {e}")
     
     def _cleanup_old_backups(self, keep_last: int = 5) -> None:
         """
