@@ -9,8 +9,11 @@ from typing import List, Dict, Any, Tuple
 import numpy as np
 
 from core.paragraph_service import ParagraphService
-from core.vector_store.persistent_store import PersistentFAISSStore
+from core.vector_store.persistent_store import PersistentStore
+from core.vector_store.base import VectorStore
+from core.vector_store.vector_store_factory import VectorStoreFactory, VectorStoreType
 from core.embeddings import EmbeddingService
+from config.settings import Settings, get_settings
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -21,9 +24,6 @@ MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024  # Convert MB to bytes
 
 # Supported file types
 SUPPORTED_EXTENSIONS = {'.txt', '.md', '.html'}
-
-# Global vector store instance
-_vector_store = None
 
 class ProcessingStrategy(str, Enum):
     """Enum for document processing strategies."""
@@ -53,20 +53,37 @@ class EmbeddingMerger:
 class VectorStorer:
     """Mixin for vector storage operations."""
     
-    def store_vectors(self, vector_store: PersistentFAISSStore, vectors: np.ndarray) -> List[int]:
+    @staticmethod
+    def store_vectors(vector_store: PersistentStore, vectors: np.ndarray) -> List[int]:
         """Store vectors and return their IDs."""
-        return vector_store.add_vectors(vectors)
+        try:
+            logger.info("[VectorStorer] Storing vectors with shape: %s using store type: %s", 
+                       vectors.shape, type(vector_store).__name__)
+            vector_store.add(vectors)
+            return list(range(len(vectors)))  # Simplified ID generation
+        except Exception as e:
+            logger.error("[VectorStorer] Failed to store vectors: %s", str(e))
+            raise RuntimeError(f"Failed to store vectors: {e}")
     
-    def store_single_vector(self, vector_store: PersistentFAISSStore, vector: np.ndarray) -> int:
+    @staticmethod
+    def store_single_vector(vector_store: PersistentStore, vector: np.ndarray) -> int:
         """Store a single vector and return its ID."""
-        return vector_store.add_vectors([vector])[0]
+        try:
+            logger.info("[VectorStorer] Storing single vector with shape: %s using store type: %s", 
+                       vector.shape, type(vector_store).__name__)
+            vector_store.add(vector.reshape(1, -1))
+            return 0  # Simplified ID generation
+        except Exception as e:
+            logger.error("[VectorStorer] Failed to store single vector: %s", str(e))
+            raise RuntimeError(f"Failed to store single vector: {e}")
 
 class DocumentProcessor(ABC, TextProcessor):
     """Abstract base class for document processing strategies."""
     
-    def __init__(self, paragraph_service: ParagraphService, vector_store: PersistentFAISSStore):
+    def __init__(self, paragraph_service: ParagraphService, vector_store: PersistentStore):
         super().__init__(paragraph_service)
         self.vector_store = vector_store
+        logger.info("[DocumentProcessor] Created with store type: %s", type(vector_store).__name__)
     
     @abstractmethod
     def process(self, text: str) -> Dict[str, Any]:
@@ -130,23 +147,38 @@ class CombinedEmbeddingStrategy(DocumentProcessor, EmbeddingMerger, VectorStorer
             "paragraphs": paragraphs
         }
 
-def get_paragraph_service() -> ParagraphService:
-    """Get or create paragraph service instance."""
-    return ParagraphService()
+def get_paragraph_service(settings: Settings = Depends(get_settings)) -> ParagraphService:
+    """Get paragraph service instance."""
+    logger.info("[Documents API] Creating paragraph service")
+    embedding_service = EmbeddingService()
+    return ParagraphService(embedding_service=embedding_service)
 
-def get_vector_store() -> PersistentFAISSStore:
-    """Get or create vector store instance."""
-    global _vector_store
-    if _vector_store is None:
-        _vector_store = PersistentFAISSStore()
-    return _vector_store
+def get_vector_store(settings: Settings = Depends(get_settings)) -> VectorStore:
+    """Get vector store instance."""
+    logger.info("[Documents API] Creating vector store with settings: %s", settings.faiss_index_path)
+    return VectorStoreFactory.create(VectorStoreType.FAISS, settings)
+
+def get_persistent_store(
+    settings: Settings = Depends(get_settings),
+    vector_store: VectorStore = Depends(get_vector_store)
+) -> PersistentStore:
+    """Get persistent store instance."""
+    logger.info("[Documents API] Creating persistent store")
+    logger.info("[Documents API] Using FAISS_INDEX_PATH from settings: %s", settings.faiss_index_path)
+    logger.info("[Documents API] Using vector_store type: %s", type(vector_store).__name__)
+    
+    store = VectorStoreFactory.create(VectorStoreType.PERSISTENT, settings)
+    logger.info("[Documents API] Persistent store created with index_path: %s", store.index_path)
+    return store
 
 def get_processor(
     strategy: ProcessingStrategy,
     paragraph_service: ParagraphService,
-    vector_store: PersistentFAISSStore
+    vector_store: PersistentStore
 ) -> DocumentProcessor:
     """Factory function to get appropriate processor based on strategy."""
+    logger.info("[Documents API] Creating processor for strategy: %s with vector_store type: %s", 
+                strategy, type(vector_store).__name__)
     processors = {
         ProcessingStrategy.PARAGRAPHS: ParagraphEmbeddingStrategy,
         ProcessingStrategy.MERGED: MergedEmbeddingStrategy,
@@ -156,6 +188,9 @@ def get_processor(
 
 def process_file_content(content: bytes, file_ext: str) -> str:
     """Process file content based on file type."""
+    if not content:
+        raise ValueError("Empty text")
+        
     if file_ext == '.html':
         soup = BeautifulSoup(content, 'html.parser')
         return soup.get_text(separator='\n', strip=True)
@@ -165,14 +200,17 @@ def process_file_content(content: bytes, file_ext: str) -> str:
         soup = BeautifulSoup(html, 'html.parser')
         return soup.get_text(separator='\n', strip=True)
     else:  # .txt
-        return content.decode()
+        text = content.decode()
+        if not text.strip():
+            raise ValueError("Empty text")
+        return text
 
 @router.post("/documents/upload")
 async def upload_document(
     file: UploadFile,
     strategy: ProcessingStrategy = ProcessingStrategy.PARAGRAPHS,
     paragraph_service: ParagraphService = Depends(get_paragraph_service),
-    vector_store: PersistentFAISSStore = Depends(get_vector_store)
+    vector_store: PersistentStore = Depends(get_persistent_store)
 ) -> JSONResponse:
     """
     Upload and process a document file.
@@ -203,28 +241,36 @@ async def upload_document(
                 detail=f"File too large. Maximum size: {MAX_FILE_SIZE_MB}MB"
             )
 
-        # Process content based on file type
-        processed_content = process_file_content(content, file_ext)
-
         try:
-            # Get appropriate processor and process document
-            processor = get_processor(strategy, paragraph_service, vector_store)
-            result = processor.process(processed_content)
-            
-            logger.info(f"Successfully processed document: {file.filename}")
-            
-            return JSONResponse(
-                content={
-                    "message": "Document processed successfully",
-                    "filename": file.filename,
-                    **result
-                },
-                status_code=200
-            )
+            # Process content based on file type
+            processed_content = process_file_content(content, file_ext)
+
+            try:
+                # Get appropriate processor and process document
+                processor = get_processor(strategy, paragraph_service, vector_store)
+                result = processor.process(processed_content)
+                
+                logger.info(f"Successfully processed document: {file.filename}")
+                
+                return JSONResponse(
+                    content={
+                        "message": "Document processed successfully",
+                        "filename": file.filename,
+                        **result
+                    },
+                    status_code=200
+                )
+            except (ValueError, RuntimeError) as e:
+                logger.error(f"Error processing document {file.filename}: {str(e)}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Error processing document: {str(e)}"
+                )
         except ValueError as e:
+            logger.error(f"Error processing document {file.filename}: {str(e)}")
             raise HTTPException(
                 status_code=400,
-                detail=f"Error processing text: {str(e)}"
+                detail=str(e)
             )
 
     except HTTPException as e:

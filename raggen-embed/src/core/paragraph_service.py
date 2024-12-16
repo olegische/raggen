@@ -10,7 +10,8 @@ logger = logging.getLogger(__name__)
 class ParagraphService:
     """Service for handling paragraph-based text processing and embeddings."""
     
-    def __init__(self, 
+    def __init__(self,
+                 embedding_service: EmbeddingService,
                  min_length: int = 100,
                  max_length: int = 1000,
                  overlap: int = 50):
@@ -18,14 +19,18 @@ class ParagraphService:
         Initialize paragraph service.
         
         Args:
+            embedding_service: Service for generating embeddings (required)
             min_length: Minimum paragraph length (default: 100)
             max_length: Maximum paragraph length (default: 1000)
             overlap: Number of characters to overlap between paragraphs (default: 50)
         """
+        if not embedding_service:
+            raise ValueError("Embedding service must be provided")
+            
         self.min_length = min_length
         self.max_length = max_length
         self.overlap = overlap
-        self.embedding_service = EmbeddingService()
+        self.embedding_service = embedding_service
         
     def split_text(self, text: str) -> List[str]:
         """

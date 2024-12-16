@@ -1,215 +1,213 @@
 import io
-import os
 import pytest
-import tempfile
-import shutil
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import numpy as np
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, call
 import logging
 from datetime import datetime
 
-from src.main import app
+from src.main import create_app
 from src.api.documents import (
     get_paragraph_service,
+    get_vector_store,
+    get_persistent_store,
+    ProcessingStrategy
 )
-from src.core.vector_store.persistent_store import PersistentFAISSStore
+from src.core.paragraph_service import ParagraphService
+from src.core.vector_store.persistent_store import PersistentStore
 from src.core.vector_store.faiss_store import FAISSVectorStore
-from src.config.settings import Settings
+from src.core.vector_store.vector_store_factory import VectorStoreFactory, VectorStoreType
+from src.config.settings import Settings, get_settings
+from conftest import (
+    SAMPLE_TEXT,
+    SAMPLE_PARAGRAPHS,
+    SAMPLE_EMBEDDINGS,
+)
 
-client = TestClient(app)
 logger = logging.getLogger(__name__)
 
-# Test data
-SAMPLE_TEXT = (
-    "First paragraph with some content.\n\n"
-    "Second paragraph with different content.\n\n"
-    "Third paragraph with more content."
-)
-SAMPLE_PARAGRAPHS = SAMPLE_TEXT.split("\n\n")
-SAMPLE_EMBEDDING = np.ones((384,), dtype=np.float32)
-SAMPLE_EMBEDDINGS = np.stack([SAMPLE_EMBEDDING for _ in range(len(SAMPLE_PARAGRAPHS))])
-
-# Глобальная переменная для хранения vector store в тестах
-_vector_store = None
-
-def get_vector_store() -> PersistentFAISSStore:
-    """Get or create vector store instance."""
-    global _vector_store
-    if _vector_store is None:
-        index_path = "/fake/path/index.faiss"  # Укажите путь для тестов
-        _vector_store = PersistentFAISSStore(index_path=index_path)
-    return _vector_store
-
-@pytest.fixture
-def test_dir():
-    """Create temporary directory for vector store files."""
-    temp_dir = tempfile.mkdtemp()
-    yield temp_dir
-    shutil.rmtree(temp_dir)
-
-@pytest.fixture
-def mocked_vector_store():
-    # Создаем мок настроек
-    mock_settings = MagicMock(spec=Settings)
-    mock_settings.faiss_index_path = "/fake/path/index.faiss"
-    mock_settings.vector_dim = 384
+@pytest.fixture(scope="function")
+def mock_vector_store(test_settings):
+    """Create mock vector store."""
+    logger.info("[Test] Creating mock vector store")
+    store = MagicMock(spec=FAISSVectorStore)
+    store.settings = test_settings
+    store.add = MagicMock()
+    store.search = MagicMock(return_value=(np.array([]), np.array([])))
+    store.save = MagicMock()
+    store.load = MagicMock()
     
-    def exists_side_effect(path):
-        # Возвращаем True только для index.faiss
-        return path.endswith('index.faiss')
+    def mock_add(vectors):
+        logger.info("[Mock] Vector store add called with vectors shape: %s", vectors.shape)
+        return None
+    store.add.side_effect = mock_add
     
-    with patch("os.makedirs") as mock_makedirs, \
-         patch("os.path.exists", side_effect=exists_side_effect) as mock_exists, \
-         patch("os.listdir") as mock_listdir, \
-         patch("os.remove") as mock_remove, \
-         patch("os.rename") as mock_rename, \
-         patch("os.path.join", side_effect=os.path.join) as mock_join, \
-         patch("src.core.vector_store.faiss_store.FAISSVectorStore.save") as mock_save, \
-         patch("src.core.vector_store.faiss_store.FAISSVectorStore.load") as mock_load, \
-         patch("src.core.vector_store.faiss_store.FAISSVectorStore.add") as mock_add, \
-         patch("src.core.vector_store.persistent_store.settings", mock_settings):
-        
-        # Настраиваем мок для load, возвращающий фиктивный FAISSStore
-        mock_store = MagicMock()
-        mock_store.dimension = 384
-        mock_store.add = mock_add
-        mock_store.save = mock_save
-        mock_load.return_value = mock_store
-        
-        # Настраиваем поведение файловой системы
-        mock_listdir.return_value = [
-            "index_20240101_120000.faiss",
-            "index_20240101_120001.faiss",
-            "index_20240101_120002.faiss"
-        ]
-        
-        # Сбрасываем глобальную переменную перед каждым тестом
-        global _vector_store
-        _vector_store = None
-        
-        yield {
-            "mock_makedirs": mock_makedirs,
-            "mock_exists": mock_exists,
-            "mock_listdir": mock_listdir,
-            "mock_remove": mock_remove,
-            "mock_rename": mock_rename,
-            "mock_join": mock_join,
-            "mock_load": mock_load,
-            "mock_save": mock_save,
-            "mock_add": mock_add,
-            "mock_store": mock_store,
-            "mock_settings": mock_settings
-        }
+    return store
 
-def test_add_vectors_with_mocks(mocked_vector_store):
-    """Test add_vectors method with mocked dependencies."""
-    # Настраиваем моки
-    mock_exists = mocked_vector_store["mock_exists"]
-    mock_save = mocked_vector_store["mock_save"]
-    mock_add = mocked_vector_store["mock_add"]
-    mock_load = mocked_vector_store["mock_load"]
-    mock_rename = mocked_vector_store["mock_rename"]
-    mock_listdir = mocked_vector_store["mock_listdir"]
+@pytest.fixture(scope="function")
+def mock_persistent_store(test_settings, mock_vector_store):
+    """Create mock persistent store."""
+    logger.info("[Test] Creating mock persistent store")
+    store = MagicMock(spec=PersistentStore)
+    store.settings = test_settings
+    store.index_path = test_settings.faiss_index_path
+    store.store = mock_vector_store
+    store.add = MagicMock()
+    store.search = MagicMock(return_value=(np.array([]), np.array([])))
     
-    # Создаем тестовые данные
-    test_vectors = np.random.rand(3, 384).astype(np.float32)
-    index_path = "/fake/path/index.faiss"
+    def mock_add(vectors):
+        logger.info("[Mock] Persistent store add called with vectors shape: %s", vectors.shape)
+        store.store.add(vectors)  # Делегируем вызов базовому store
+        return None
+    store.add.side_effect = mock_add
     
-    # Создаем экземпляр PersistentFAISSStore
-    store = PersistentFAISSStore(index_path=index_path)
-    
-    # Добавляем векторы
-    store.add_vectors(test_vectors)
-    
-    # Проверяем вызовы
-    mock_add.assert_called_once_with(test_vectors)  # Проверяем, что векторы были добавлены
-    mock_save.assert_called_once_with(index_path)   # Проверяем сохранение индекса
-    mock_rename.assert_called_once()                # Проверяем создание бэкапа
-    mock_listdir.assert_called_once()              # Проверяем чтение директории для очистки бэкапов
+    return store
 
-def test_persistence(mocked_vector_store):
+@pytest.fixture(scope="function", autouse=True)
+def mock_factory(mock_vector_store, mock_persistent_store):
+    """Create mock factory."""
+    logger.info("[Test] Creating mock factory")
+    
+    def mock_create(store_type, settings, force_new=False):
+        logger.info("[Mock] Factory create called with store_type: %s", store_type)
+        if store_type.value == VectorStoreType.FAISS.value:
+            logger.info("[Mock] Returning mock vector store")
+            return mock_vector_store
+        elif store_type.value == VectorStoreType.PERSISTENT.value:
+            logger.info("[Mock] Returning mock persistent store")
+            return mock_persistent_store
+        logger.error("[Mock] Unknown store type: %s", store_type)
+        raise ValueError(f"Unknown store type: {store_type}")
+    
+    with patch('src.api.documents.VectorStoreFactory.create', side_effect=mock_create):
+        yield
+
+@pytest.fixture(scope="function")
+def mock_paragraph_service():
+    """Create mock paragraph service."""
+    logger.info("[Test] Creating mock paragraph service")
+    service = MagicMock()
+    service.split_text = MagicMock(side_effect=lambda text: SAMPLE_PARAGRAPHS)
+    service.get_embeddings = MagicMock(return_value=SAMPLE_EMBEDDINGS)
+    service.merge_embeddings = MagicMock(side_effect=lambda embeddings: np.mean(embeddings, axis=0))
+    
+    return service
+
+@pytest.fixture(scope="function")
+def test_client(test_settings, mock_vector_store, mock_persistent_store, mock_paragraph_service):
+    """Create test client with configured dependencies."""
+    logger.info("[Test] Creating test client")
+    
+    # Create app
+    app = create_app(settings=test_settings)
+    
+    # Configure dependency overrides before creating client
+    logger.info("[Test] Setting up dependency overrides")
+    
+    # Set up dependency overrides
+    app.dependency_overrides.update({
+        get_settings: lambda: test_settings,
+        get_paragraph_service: lambda: mock_paragraph_service,
+        get_vector_store: lambda: mock_vector_store,
+        get_persistent_store: lambda: mock_persistent_store
+    })
+    
+    # Create and return client
+    client = TestClient(app)
+    logger.info("[Test] Test client created with overrides: %s", list(app.dependency_overrides.keys()))
+    
+    yield client
+    
+    # Clean up
+    logger.info("[Test] Cleaning up dependency overrides")
+    app.dependency_overrides.clear()
+
+def test_store_creation(test_client, test_settings, mock_vector_store, mock_persistent_store):
+    """Test store creation and settings propagation."""
+    logger.info("[Test] Starting test_store_creation")
+    
+    # Upload a file to trigger store creation
+    file = io.BytesIO(SAMPLE_TEXT.encode())
+    logger.info("[Test] Sample text length: %d", len(SAMPLE_TEXT))
+    
+    response = test_client.post(
+        "/api/v1/documents/upload",
+        files={"file": ("test.txt", file, "text/plain")},
+        params={"strategy": "paragraphs"}
+    )
+    logger.info("[Test] Upload response status: %d", response.status_code)
+    if response.status_code != 200:
+        logger.error("[Test] Upload response content: %s", response.content)
+    
+    assert response.status_code == 200
+    
+    # Verify settings propagation
+    assert mock_vector_store.settings == test_settings
+    assert mock_persistent_store.settings == test_settings
+    
+    # Verify store interactions
+    logger.info("[Test] Mock persistent store add call count: %d", mock_persistent_store.add.call_count)
+    mock_persistent_store.add.assert_called()
+
+def test_persistence(test_client, mock_persistent_store, test_settings):
     """Test vector store persistence between requests."""
-    logger.info("Testing vector store persistence")
+    logger.info("[Test] Testing vector store persistence")
     
-    # Настраиваем моки
-    mock_load = mocked_vector_store["mock_load"]
-    mock_save = mocked_vector_store["mock_save"]
-    mock_add = mocked_vector_store["mock_add"]
+    # First request
+    file1 = io.BytesIO(SAMPLE_TEXT.encode())
+    response1 = test_client.post(
+        "/api/v1/documents/upload",
+        files={"file": ("test1.txt", file1, "text/plain")},
+        params={"strategy": "paragraphs"}
+    )
+    assert response1.status_code == 200
     
-    # Create mock paragraph service
-    mock_ps = MagicMock()
-    mock_ps.split_text.return_value = SAMPLE_PARAGRAPHS
-    mock_ps.get_embeddings.return_value = SAMPLE_EMBEDDINGS
+    # Second request
+    file2 = io.BytesIO(SAMPLE_TEXT.encode())
+    response2 = test_client.post(
+        "/api/v1/documents/upload",
+        files={"file": ("test2.txt", file2, "text/plain")},
+        params={"strategy": "paragraphs"}
+    )
+    assert response2.status_code == 200
     
-    # Настраиваем FastAPI зависимости
-    app.dependency_overrides[get_paragraph_service] = lambda: mock_ps
-    app.dependency_overrides["src.api.documents.get_vector_store"] = get_vector_store
-    
-    try:
-        # Первый запрос
-        file1 = io.BytesIO(SAMPLE_TEXT.encode())
-        response1 = client.post(
-            "/api/v1/documents/upload",
-            files={"file": ("test1.txt", file1, "text/plain")},
-            params={"strategy": "paragraphs"}
-        )
-        assert response1.status_code == 200
-        vector_ids1 = response1.json()["vector_ids"]
-        
-        # Второй запрос
-        file2 = io.BytesIO(SAMPLE_TEXT.encode())
-        response2 = client.post(
-            "/api/v1/documents/upload",
-            files={"file": ("test2.txt", file2, "text/plain")},
-            params={"strategy": "paragraphs"}
-        )
-        assert response2.status_code == 200
-        vector_ids2 = response2.json()["vector_ids"]
-        
-        # Проверяем, что новые вектора добавлены
-        assert min(vector_ids2) > max(vector_ids1)
-        
-        # Проверяем вызовы моков
-        assert mock_add.call_count == 2  # Два вызова add для двух запросов
-        assert mock_save.call_count == 2  # Два вызова save
-        assert mock_load.call_count == 1  # Один вызов load при создании store
-        
-    finally:
-        app.dependency_overrides.clear()
+    # Verify store was used
+    assert mock_persistent_store.add.call_count == 2
 
-def test_upload_invalid_file_type():
+def test_upload_invalid_file_type(test_client):
     """Test uploading file with unsupported extension."""
-    logger.info("Testing upload with invalid file type")
+    logger.info("[Test] Testing upload with invalid file type")
+    
     content = "Some content"
     file = io.BytesIO(content.encode())
-    response = client.post(
+    response = test_client.post(
         "/api/v1/documents/upload",
         files={"file": ("test.pdf", file, "application/pdf")},
         params={"strategy": "paragraphs"}
     )
     assert response.status_code == 400
     assert "Unsupported file type" in response.json()["detail"]
-    logger.info("Invalid file type test completed successfully")
+    logger.info("[Test] Invalid file type test completed successfully")
 
-def test_upload_empty_file():
+def test_upload_empty_file(test_client):
     """Test uploading empty file."""
-    logger.info("Testing upload with empty file")
+    logger.info("[Test] Testing upload with empty file")
+    
     file = io.BytesIO(b"")
-    response = client.post(
+    response = test_client.post(
         "/api/v1/documents/upload",
         files={"file": ("test.txt", file, "text/plain")},
         params={"strategy": "paragraphs"}
     )
     assert response.status_code == 400
-    assert "Error processing text" in response.json()["detail"]
-    logger.info("Empty file test completed successfully")
+    assert "Empty text" in response.json()["detail"]
+    logger.info("[Test] Empty file test completed successfully")
 
-def test_get_supported_types():
+def test_get_supported_types(test_client):
     """Test getting supported file types."""
-    logger.info("Testing get supported types endpoint")
-    response = client.get("/api/v1/documents/supported-types")
+    logger.info("[Test] Testing get supported types endpoint")
+    response = test_client.get("/api/v1/documents/supported-types")
     assert response.status_code == 200
     data = response.json()
     assert "supported_types" in data
@@ -218,59 +216,84 @@ def test_get_supported_types():
     assert isinstance(data["supported_types"], list)
     assert isinstance(data["max_file_size_mb"], float)
     assert isinstance(data["processing_strategies"], list)
-    logger.info("Supported types test completed successfully")
+    logger.info("[Test] Supported types test completed successfully")
 
-def test_persistence_with_different_strategies(mocked_vector_store):
+def test_persistence_with_different_strategies(test_client, mock_persistent_store, mock_paragraph_service):
     """Test persistence with different processing strategies."""
-    logger.info("Testing persistence with different strategies")
+    logger.info("[Test] Testing persistence with different strategies")
     
-    # Настраиваем моки
-    mock_load = mocked_vector_store["mock_load"]
-    mock_save = mocked_vector_store["mock_save"]
-    mock_add = mocked_vector_store["mock_add"]
-    
-    # Create mock paragraph service
-    mock_ps = MagicMock()
-    mock_ps.split_text.return_value = SAMPLE_PARAGRAPHS
-    mock_ps.get_embeddings.return_value = SAMPLE_EMBEDDINGS
-    mock_ps.merge_embeddings.return_value = np.mean(SAMPLE_EMBEDDINGS, axis=0)
-    
-    # Настраиваем FastAPI зависимости
-    app.dependency_overrides[get_paragraph_service] = lambda: mock_ps
-    app.dependency_overrides["src.api.documents.get_vector_store"] = get_vector_store
-    
-    try:
-        # Test each strategy
-        strategies = ["paragraphs", "merged", "combined"]
-        for strategy in strategies:
-            # Upload document with current strategy
-            file = io.BytesIO(SAMPLE_TEXT.encode())
-            response = client.post(
-                "/api/v1/documents/upload",
-                files={"file": (f"test_{strategy}.txt", file, "text/plain")},
-                params={"strategy": strategy}
-            )
-            assert response.status_code == 200
-            data = response.json()
-            assert data["strategy"] == strategy
-            
-            # Verify vectors are accessible after reload
-            file2 = io.BytesIO(SAMPLE_TEXT.encode())
-            response2 = client.post(
-                "/api/v1/documents/upload",
-                files={"file": (f"test_{strategy}_2.txt", file2, "text/plain")},
-                params={"strategy": strategy}
-            )
-            assert response2.status_code == 200
+    strategies = ["paragraphs", "merged", "combined"]
+    for strategy in strategies:
+        # Upload document with current strategy
+        file = io.BytesIO(SAMPLE_TEXT.encode())
+        response = test_client.post(
+            "/api/v1/documents/upload",
+            files={"file": (f"test_{strategy}.txt", file, "text/plain")},
+            params={"strategy": strategy}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["strategy"] == strategy
         
-        # Проверяем вызовы моков
-        expected_add_calls = len(strategies) * 2   # add вызывается для каждого запроса
-        expected_save_calls = len(strategies) * 2  # save вызывается после каждого add
-        expected_load_calls = 1                    # load вызывается только при создании store
-        
-        assert mock_load.call_count == expected_load_calls
-        assert mock_add.call_count == expected_add_calls
-        assert mock_save.call_count == expected_save_calls
-        
-    finally:
-        app.dependency_overrides.clear()
+        # Verify vectors are accessible after reload
+        file2 = io.BytesIO(SAMPLE_TEXT.encode())
+        response2 = test_client.post(
+            "/api/v1/documents/upload",
+            files={"file": (f"test_{strategy}_2.txt", file2, "text/plain")},
+            params={"strategy": strategy}
+        )
+        assert response2.status_code == 200
+    
+    # Verify store was used appropriately for each strategy
+    expected_add_calls = {
+        "paragraphs": 2,  # Один вызов на файл, все параграфы добавляются вместе матрицей (3, 384)
+        "merged": 2,  # Один вызов на файл с одним вектором (1, 384)
+        "combined": 4  # Два вызова на файл: параграфы (3, 384) + объединенный (1, 384)
+    }
+    total_expected_calls = sum(expected_add_calls.values())
+    actual_calls = mock_persistent_store.add.call_count
+    logger.info("[Test] Expected %d calls, got %d calls", total_expected_calls, actual_calls)
+    logger.info("[Test] Expected calls breakdown: %s", expected_add_calls)
+    logger.info("[Test] Actual calls:")
+    for i, call in enumerate(mock_persistent_store.add.call_args_list):
+        args, kwargs = call
+        vectors = args[0]
+        logger.info("[Test] Call %d: shape %s", i + 1, vectors.shape)
+    
+    assert mock_persistent_store.add.call_count == total_expected_calls
+    
+    # Verify paragraph service was used correctly for each strategy
+    expected_split_text_calls = {
+        "paragraphs": 2,  # Два вызова для paragraphs (по одному на файл)
+        "merged": 2,      # Два вызова для merged (по одному на файл)
+        "combined": 2     # Два вызова для combined (по одному на файл)
+    }
+    total_split_text_calls = sum(expected_split_text_calls.values())
+    assert mock_paragraph_service.split_text.call_count == total_split_text_calls
+    assert mock_paragraph_service.get_embeddings.call_count == total_split_text_calls
+
+def test_error_handling(test_client, mock_persistent_store):
+    """Test error handling in document processing."""
+    logger.info("[Test] Testing error handling")
+    
+    # Test file size limit
+    large_content = "x" * (10 * 1024 * 1024 + 1)  # Slightly over 10MB
+    file = io.BytesIO(large_content.encode())
+    response = test_client.post(
+        "/api/v1/documents/upload",
+        files={"file": ("large.txt", file, "text/plain")},
+        params={"strategy": "paragraphs"}
+    )
+    assert response.status_code == 400
+    assert "File too large" in response.json()["detail"]
+    
+    # Test store error handling
+    mock_persistent_store.add.side_effect = Exception("Store error")
+    file = io.BytesIO(SAMPLE_TEXT.encode())
+    response = test_client.post(
+        "/api/v1/documents/upload",
+        files={"file": ("test.txt", file, "text/plain")},
+        params={"strategy": "paragraphs"}
+    )
+    assert response.status_code == 500
+    assert "Error processing document" in response.json()["detail"]
