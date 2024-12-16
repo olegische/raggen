@@ -9,7 +9,6 @@ from .base import VectorStore
 from config.settings import Settings, IndexType
 from utils.logging import get_logger
 
-settings = Settings()
 logger = get_logger(__name__)
 
 class FAISSVectorStore(VectorStore):
@@ -17,19 +16,25 @@ class FAISSVectorStore(VectorStore):
     
     def __init__(
         self,
+        settings: Settings,
         dimension: Optional[int] = None,
-        index_type: Optional[IndexType] = None
+        index_type: Optional[IndexType] = None,
     ):
         """
         Initialize FAISS vector store.
         
         Args:
+            settings: Settings instance (required)
             dimension: Vector dimension (default: from settings)
             index_type: Type of FAISS index to use (default: from settings)
         """
+        if not settings:
+            raise ValueError("Settings must be provided")
+            
         logger.info("Initializing FAISS vector store")
-        self.dimension = dimension or settings.vector_dim
-        self.index_type = index_type or settings.faiss_index_type
+        self.settings = settings
+        self.dimension = dimension or self.settings.vector_dim
+        self.index_type = index_type or self.settings.faiss_index_type
         
         # Create index based on settings
         self.index = self._create_index()
@@ -47,26 +52,26 @@ class FAISSVectorStore(VectorStore):
             return faiss.IndexFlatL2(self.dimension)
             
         elif self.index_type == IndexType.IVF_FLAT:
-            logger.info("Creating IVF_FLAT index with %d clusters", settings.n_clusters)
+            logger.info("Creating IVF_FLAT index with %d clusters", self.settings.n_clusters)
             quantizer = faiss.IndexFlatL2(self.dimension)
-            index = faiss.IndexIVFFlat(quantizer, self.dimension, settings.n_clusters)
-            index.nprobe = settings.n_probe
+            index = faiss.IndexIVFFlat(quantizer, self.dimension, self.settings.n_clusters)
+            index.nprobe = self.settings.n_probe
             return index
             
         elif self.index_type == IndexType.IVF_PQ:
             logger.info("Creating IVF_PQ index with %d clusters, M=%d, bits=%d", 
-                       settings.n_clusters, settings.pq_m, settings.pq_bits)
+                       self.settings.n_clusters, self.settings.pq_m, self.settings.pq_bits)
             quantizer = faiss.IndexFlatL2(self.dimension)
-            index = faiss.IndexIVFPQ(quantizer, self.dimension, settings.n_clusters, 
-                                   settings.pq_m, settings.pq_bits)
-            index.nprobe = settings.n_probe
+            index = faiss.IndexIVFPQ(quantizer, self.dimension, self.settings.n_clusters, 
+                                   self.settings.pq_m, self.settings.pq_bits)
+            index.nprobe = self.settings.n_probe
             return index
             
         elif self.index_type == IndexType.HNSW_FLAT:
-            logger.info("Creating HNSW index with M=%d", settings.hnsw_m)
-            index = faiss.IndexHNSWFlat(self.dimension, settings.hnsw_m)
-            index.hnsw.efConstruction = settings.hnsw_ef_construction
-            index.hnsw.efSearch = settings.hnsw_ef_search
+            logger.info("Creating HNSW index with M=%d", self.settings.hnsw_m)
+            index = faiss.IndexHNSWFlat(self.dimension, self.settings.hnsw_m)
+            index.hnsw.efConstruction = self.settings.hnsw_ef_construction
+            index.hnsw.efSearch = self.settings.hnsw_ef_search
             return index
             
         else:
@@ -80,22 +85,27 @@ class FAISSVectorStore(VectorStore):
         Args:
             vectors: Sample vectors for training (n_samples, dimension)
         """
-        if self.is_trained:
-            logger.debug("Index is already trained")
-            return
-            
         # Validate vector dimensions
         if vectors.shape[1] != self.dimension:
             raise ValueError(f"Expected vectors of dimension {self.dimension}, got {vectors.shape[1]}")
         
-        if self.index_type in {IndexType.IVF_FLAT, IndexType.IVF_PQ}:
-            logger.info("Training index of type %s", self.index_type)
-            self.index.train(vectors)
-        else:
+        # Сначала проверяем, нужна ли тренировка для этого типа индекса
+        requires_training = self.index_type in {IndexType.IVF_FLAT, IndexType.IVF_PQ}
+        if not requires_training:
             logger.debug("Index type %s doesn't require explicit training", self.index_type)
+            self.is_trained = True
+            return
             
+        # Если индекс уже тренирован, выходим
+        if self.is_trained:
+            logger.debug("Index is already trained")
+            return
+            
+        # Тренируем индекс
+        logger.info("Training index of type %s", self.index_type)
+        self.index.train(vectors)
         self.is_trained = True
-        logger.info("Index is now ready for use")
+        logger.info("Index is now trained and ready for use")
     
     def add(self, vectors: np.ndarray) -> None:
         """
@@ -127,17 +137,20 @@ class FAISSVectorStore(VectorStore):
             logger.error("Failed to add vectors: %s", str(e))
             raise
     
-    def search(self, query_vectors: np.ndarray, k: int = settings.n_results) -> Tuple[np.ndarray, np.ndarray]:
+    def search(self, query_vectors: np.ndarray, k: Optional[int] = None) -> Tuple[np.ndarray, np.ndarray]:
         """
         Search for similar vectors.
         
         Args:
             query_vectors: Query vectors (n_queries, dimension)
-            k: Number of results to return per query
+            k: Number of results to return per query (default: from settings)
             
         Returns:
             Tuple of (distances, indices)
         """
+        # Use settings.n_results as default if k not provided
+        k = k if k is not None else self.settings.n_results
+        
         # First check if index is ready for search
         if not self.is_trained:
             raise RuntimeError("Index must be trained before searching")
@@ -195,22 +208,26 @@ class FAISSVectorStore(VectorStore):
             raise
     
     @classmethod
-    def load(cls, path: str) -> 'FAISSVectorStore':
+    def load(cls, path: str, settings: Settings) -> 'FAISSVectorStore':
         """
         Load an index from disk.
         
         Args:
             path: Path to load the index from
+            settings: Settings instance (required)
             
         Returns:
             Loaded vector store
         """
+        if not settings:
+            raise ValueError("Settings must be provided")
+            
         logger.info("Loading index from: %s", path)
         start_time = time.time()
         
         try:
-            # Create instance
-            instance = cls()
+            # Create instance with settings
+            instance = cls(settings=settings)
             
             # Load the index
             instance.index = faiss.read_index(path)
@@ -229,7 +246,7 @@ class FAISSVectorStore(VectorStore):
                 instance.index_type = IndexType.HNSW_FLAT
             else:
                 logger.warning("Unknown index type loaded, using default")
-                instance.index_type = settings.faiss_index_type
+                instance.index_type = instance.settings.faiss_index_type
             
             load_time = time.time() - start_time
             logger.info("Index loaded successfully in %.2f seconds", load_time)
