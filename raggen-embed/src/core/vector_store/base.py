@@ -1,18 +1,16 @@
 from abc import ABC, abstractmethod
-from typing import Tuple, ClassVar
 import numpy as np
+from typing import Tuple
+import logging
+
+logger = logging.getLogger(__name__)
 
 class VectorStore(ABC):
-    """
-    Base interface for vector stores.
+    """Abstract base class for vector stores."""
     
-    The interface defines two types of methods:
-    1. Instance methods (add, search, save, __len__) that operate on existing instances
-    2. Class methods (load) that create new instances
-    
-    This separation allows for factory-like creation of stores from saved states
-    while maintaining instance-specific operations.
-    """
+    def __init__(self):
+        """Initialize vector store."""
+        logger.info("[VectorStore] Initializing base vector store")
     
     @abstractmethod
     def add(self, vectors: np.ndarray) -> None:
@@ -20,7 +18,7 @@ class VectorStore(ABC):
         Add vectors to the store.
         
         Args:
-            vectors: Vectors to add (n_vectors, dimension)
+            vectors: Array of vectors to add
         """
         pass
     
@@ -30,8 +28,8 @@ class VectorStore(ABC):
         Search for similar vectors.
         
         Args:
-            query_vectors: Query vectors (n_queries, dimension)
-            k: Number of results to return per query
+            query_vectors: Query vectors to search for
+            k: Number of results to return
             
         Returns:
             Tuple of (distances, indices)
@@ -43,11 +41,10 @@ class VectorStore(ABC):
         """
         Save the store to disk.
         
-        This is an instance method as it operates on the current state.
-        
         Args:
-            path: Path to save the store
+            path: Path to save to
         """
+        logger.info("[VectorStore] Saving vector store to path: %s", path)
         pass
     
     @classmethod
@@ -56,14 +53,13 @@ class VectorStore(ABC):
         """
         Load a store from disk.
         
-        This is a class method as it creates a new instance from saved state.
-        
         Args:
-            path: Path to load the store from
+            path: Path to load from
             
         Returns:
-            New instance of the store
+            New instance of VectorStore
         """
+        logger.info("[VectorStore] Loading vector store from path: %s", path)
         pass
     
     @abstractmethod

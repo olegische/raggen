@@ -11,7 +11,7 @@ import faiss
 
 from core.vector_store.base import VectorStore
 from core.vector_store.faiss_store import FAISSVectorStore
-from config.settings import Settings, IndexType
+from config.settings import Settings, IndexType, reset_settings
 
 def get_memory_usage():
     """Get current memory usage in MB."""
@@ -39,8 +39,8 @@ def generate_training_vectors(dim: int, n_vectors: int, normalize: bool = True) 
 @pytest.fixture(scope="function")
 def test_settings():
     """Create settings specifically for tests."""
-    # Reset singleton before test
-    Settings.reset()
+    # Reset settings before test
+    reset_settings()
     
     # Create temporary directory
     temp_dir = tempfile.mkdtemp()
@@ -69,8 +69,8 @@ def test_settings():
     # Cleanup
     shutil.rmtree(temp_dir)
     
-    # Reset singleton and environment
-    Settings.reset()
+    # Reset settings and environment
+    reset_settings()
     for key in [
         "FAISS_INDEX_PATH", "VECTOR_DIM", "N_CLUSTERS", "N_PROBE",
         "PQ_M", "PQ_BITS", "HNSW_M", "HNSW_EF_CONSTRUCTION",

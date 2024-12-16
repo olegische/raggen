@@ -1,8 +1,12 @@
 from typing import List, Literal
+from functools import lru_cache
 from pydantic_settings import BaseSettings
 from pydantic import Field
 from enum import Enum
+import os
+import logging
 
+logger = logging.getLogger(__name__)
 
 class IndexType(str, Enum):
     """Available FAISS index types."""
@@ -10,7 +14,6 @@ class IndexType(str, Enum):
     IVF_FLAT = "ivf_flat"  # Approximate search with clustering, requires training
     IVF_PQ = "ivf_pq"  # Compressed vectors with clustering, requires training
     HNSW_FLAT = "hnsw_flat"  # Graph-based search, no training but has parameters
-
 
 class Settings(BaseSettings):
     """Application settings."""
@@ -23,193 +26,178 @@ class Settings(BaseSettings):
     
     # API settings
     api_title: str = Field(
-        default="Raggen Embed API",
-        description="API title",
-        env="API_TITLE"
+        default=os.getenv("API_TITLE", "Raggen Embed API"),
+        description="API title"
     )
     api_description: str = Field(
-        default="API for text embeddings and vector search",
-        description="API description",
-        env="API_DESCRIPTION"
+        default=os.getenv("API_DESCRIPTION", "API for text embeddings and vector search"),
+        description="API description"
     )
     api_version: str = Field(
-        default="1.0.0",
-        description="API version",
-        env="API_VERSION"
+        default=os.getenv("API_VERSION", "1.0.0"),
+        description="API version"
     )
     
     # Model settings
     model_name: str = Field(
-        default="sentence-transformers/all-MiniLM-L6-v2",
-        description="Name of the sentence transformer model to use",
-        env="MODEL_NAME"
+        default=os.getenv("MODEL_NAME", "sentence-transformers/all-MiniLM-L6-v2"),
+        description="Name of the sentence transformer model to use"
     )
     vector_dim: int = Field(
-        default=384,
-        description="Dimension of the embedding vectors",
-        env="VECTOR_DIM"
+        default=int(os.getenv("VECTOR_DIM", "384")),
+        description="Dimension of the embedding vectors"
     )
     
     # Server settings
     host: str = Field(
-        default="0.0.0.0",
-        description="Host to bind the server to",
-        env="HOST"
+        default=os.getenv("HOST", "0.0.0.0"),
+        description="Host to bind the server to"
     )
     port: int = Field(
-        default=8001,
-        description="Port to bind the server to",
-        env="PORT"
+        default=int(os.getenv("PORT", "8001")),
+        description="Port to bind the server to"
     )
     
     # CORS settings
     cors_origins: List[str] = Field(
         default=["*"],
-        description="List of allowed CORS origins",
-        env="CORS_ORIGINS"
+        description="List of allowed CORS origins"
     )
     cors_allow_credentials: bool = Field(
         default=True,
-        description="Allow credentials in CORS requests",
-        env="CORS_ALLOW_CREDENTIALS"
+        description="Allow credentials in CORS requests"
     )
     cors_allow_methods: List[str] = Field(
         default=["*"],
-        description="List of allowed HTTP methods",
-        env="CORS_ALLOW_METHODS"
+        description="List of allowed HTTP methods"
     )
     cors_allow_headers: List[str] = Field(
         default=["*"],
-        description="List of allowed HTTP headers",
-        env="CORS_ALLOW_HEADERS"
+        description="List of allowed HTTP headers"
     )
     
     # Performance settings
     batch_size: int = Field(
-        default=32,
-        description="Batch size for processing multiple texts",
-        env="BATCH_SIZE"
+        default=int(os.getenv("BATCH_SIZE", "32")),
+        description="Batch size for processing multiple texts"
     )
     max_text_length: int = Field(
-        default=512,
-        description="Maximum length of input text",
-        env="MAX_TEXT_LENGTH"
+        default=int(os.getenv("MAX_TEXT_LENGTH", "512")),
+        description="Maximum length of input text"
     )
     request_timeout: int = Field(
-        default=30,
-        description="Request timeout in seconds",
-        env="REQUEST_TIMEOUT"
+        default=int(os.getenv("REQUEST_TIMEOUT", "30")),
+        description="Request timeout in seconds"
     )
     
     # Logging settings
     log_level: str = Field(
-        default="INFO",
-        description="Logging level",
-        env="LOG_LEVEL"
+        default=os.getenv("LOG_LEVEL", "INFO"),
+        description="Logging level"
     )
     log_format: str = Field(
-        default="%(asctime)s [%(levelname)s] [%(name)s] [%(request_id)s] %(message)s",
-        description="Log message format",
-        env="LOG_FORMAT"
+        default=os.getenv("LOG_FORMAT", "%(asctime)s [%(levelname)s] [%(name)s] [%(request_id)s] %(message)s"),
+        description="Log message format"
     )
     
     # FAISS settings
     faiss_index_type: IndexType = Field(
-        default=IndexType.FLAT_L2,  # Changed default to FLAT_L2 for exact search
+        default=IndexType(os.getenv("FAISS_INDEX_TYPE", "flat_l2")),
         description="Type of FAISS index to use. Options:\n"
                    "- flat_l2: Exact search, no training needed (best for accurate paragraph search)\n"
                    "- ivf_flat: Approximate search with clustering, requires training (faster but less accurate)\n"
                    "- ivf_pq: Compressed vectors with clustering, requires training (memory efficient)\n"
-                   "- hnsw_flat: Graph-based search, no training but has parameters (good balance)",
-        env="FAISS_INDEX_TYPE"
+                   "- hnsw_flat: Graph-based search, no training but has parameters (good balance)"
     )
     
     # IVF settings (used by ivf_flat and ivf_pq)
     n_clusters: int = Field(
-        default=100,
-        description="Number of clusters for IVF index (used by ivf_flat and ivf_pq)",
-        env="N_CLUSTERS"
+        default=int(os.getenv("N_CLUSTERS", "100")),
+        description="Number of clusters for IVF index (used by ivf_flat and ivf_pq)"
     )
     n_probe: int = Field(
-        default=10,
-        description="Number of clusters to probe during search (used by ivf_flat and ivf_pq)",
-        env="N_PROBE"
+        default=int(os.getenv("N_PROBE", "10")),
+        description="Number of clusters to probe during search (used by ivf_flat and ivf_pq)"
     )
     
     # PQ settings (used by ivf_pq)
     pq_m: int = Field(
-        default=8,
-        description="Number of sub-vectors in Product Quantization (used by ivf_pq). Must divide vector_dim evenly.",
-        env="PQ_M"
+        default=int(os.getenv("PQ_M", "8")),
+        description="Number of sub-vectors in Product Quantization (used by ivf_pq). Must divide vector_dim evenly."
     )
     pq_bits: int = Field(
-        default=8,
-        description="Number of bits per sub-vector in Product Quantization (used by ivf_pq). Must be 8, 12, or 16.",
-        env="PQ_BITS"
+        default=int(os.getenv("PQ_BITS", "8")),
+        description="Number of bits per sub-vector in Product Quantization (used by ivf_pq). Must be 8, 12, or 16."
     )
     
     # HNSW settings (used by hnsw_flat)
     hnsw_m: int = Field(
-        default=16,
-        description="Number of neighbors for HNSW graph (used by hnsw_flat)",
-        env="HNSW_M"
+        default=int(os.getenv("HNSW_M", "16")),
+        description="Number of neighbors for HNSW graph (used by hnsw_flat)"
     )
     hnsw_ef_construction: int = Field(
-        default=40,
-        description="Exploration factor during HNSW construction (used by hnsw_flat)",
-        env="HNSW_EF_CONSTRUCTION"
+        default=int(os.getenv("HNSW_EF_CONSTRUCTION", "40")),
+        description="Exploration factor during HNSW construction (used by hnsw_flat)"
     )
     hnsw_ef_search: int = Field(
-        default=16,
-        description="Exploration factor during HNSW search (used by hnsw_flat)",
-        env="HNSW_EF_SEARCH"
+        default=int(os.getenv("HNSW_EF_SEARCH", "16")),
+        description="Exploration factor during HNSW search (used by hnsw_flat)"
     )
     
     # General search settings
     n_results: int = Field(
-        default=5,
-        description="Default number of results to return",
-        env="N_RESULTS"
+        default=int(os.getenv("N_RESULTS", "5")),
+        description="Default number of results to return"
     )
     faiss_index_path: str = Field(
-        default="/app/data/faiss/index.faiss",
-        description="Path to save/load FAISS index",
-        env="FAISS_INDEX_PATH"
+        default=os.getenv("FAISS_INDEX_PATH", "/app/data/faiss/index.faiss"),
+        description="Path to save/load FAISS index"
     )
     
     # Paragraph processing settings
     paragraph_max_length: int = Field(
-        default=1000,
-        description="Maximum length of a paragraph",
-        env="PARAGRAPH_MAX_LENGTH"
+        default=int(os.getenv("PARAGRAPH_MAX_LENGTH", "1000")),
+        description="Maximum length of a paragraph"
     )
     paragraph_min_length: int = Field(
-        default=100,
-        description="Minimum length of a paragraph",
-        env="PARAGRAPH_MIN_LENGTH"
+        default=int(os.getenv("PARAGRAPH_MIN_LENGTH", "100")),
+        description="Minimum length of a paragraph"
     )
     paragraph_overlap: int = Field(
-        default=100,
-        description="Number of characters to overlap between paragraphs",
-        env="PARAGRAPH_OVERLAP"
+        default=int(os.getenv("PARAGRAPH_OVERLAP", "100")),
+        description="Number of characters to overlap between paragraphs"
     )
     preserve_sentences: bool = Field(
-        default=True,
-        description="Whether to preserve sentence boundaries when splitting paragraphs",
-        env="PRESERVE_SENTENCES"
+        default=bool(os.getenv("PRESERVE_SENTENCES", "True")),
+        description="Whether to preserve sentence boundaries when splitting paragraphs"
     )
     context_window_size: int = Field(
-        default=200,
-        description="Size of context window before and after paragraph",
-        env="CONTEXT_WINDOW_SIZE"
+        default=int(os.getenv("CONTEXT_WINDOW_SIZE", "200")),
+        description="Size of context window before and after paragraph"
     )
     embedding_merge_strategy: str = Field(
-        default="mean",
-        description="Strategy for merging paragraph embeddings (mean or weighted)",
-        env="EMBEDDING_MERGE_STRATEGY"
+        default=os.getenv("EMBEDDING_MERGE_STRATEGY", "mean"),
+        description="Strategy for merging paragraph embeddings (mean or weighted)"
     )
     
     @property
     def requires_training(self) -> bool:
         """Check if the current index type requires training."""
         return self.faiss_index_type in {IndexType.IVF_FLAT, IndexType.IVF_PQ}
+
+# Global settings instance with caching
+_settings_instance = None
+
+def get_settings() -> Settings:
+    """Get application settings with caching."""
+    global _settings_instance
+    if _settings_instance is None:
+        logger.info("[Settings] Creating new Settings instance")
+        _settings_instance = Settings()
+    return _settings_instance
+
+def reset_settings():
+    """Reset settings instance. Use only in tests."""
+    global _settings_instance
+    logger.info("[Settings] Resetting Settings instance")
+    _settings_instance = None
