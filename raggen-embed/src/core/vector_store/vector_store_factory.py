@@ -3,7 +3,6 @@ from enum import Enum
 
 from .base import VectorStore
 from .faiss_store import FAISSVectorStore
-from .persistent_store import PersistentStore
 from config.settings import Settings
 
 class VectorStoreType(Enum):
@@ -34,6 +33,8 @@ class VectorStoreFactory:
         if store_type == VectorStoreType.FAISS:
             instance = FAISSVectorStore(settings)
         elif store_type == VectorStoreType.PERSISTENT:
+            # Импортируем здесь, чтобы избежать циклической зависимости
+            from .persistent_store import PersistentStore
             instance = PersistentStore(settings)
         else:
             raise ValueError(f"Unknown vector store type: {store_type}")

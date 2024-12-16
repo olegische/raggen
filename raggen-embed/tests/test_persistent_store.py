@@ -13,6 +13,7 @@ import tempfile
 from core.vector_store.persistent_store import PersistentStore
 from core.vector_store.faiss_store import FAISSVectorStore
 from core.vector_store.base import VectorStore
+from core.vector_store.vector_store_factory import VectorStoreFactory, VectorStoreType
 from config.settings import Settings, reset_settings
 
 logger = logging.getLogger(__name__)
@@ -252,3 +253,29 @@ def test_auto_loading(test_settings, test_vectors):
     assert isinstance(distances1, np.ndarray)
     assert isinstance(distances2, np.ndarray)
     np.testing.assert_array_equal(indices1, indices2)
+
+def test_factory_integration(test_settings, test_vectors):
+    """Test integration with VectorStoreFactory."""
+    # Clear factory cache
+    VectorStoreFactory.clear_cache()
+    
+    # Create store using factory
+    store1 = VectorStoreFactory.create(VectorStoreType.PERSISTENT, test_settings)
+    assert isinstance(store1, PersistentStore)
+    
+    # Add vectors
+    store1.add(test_vectors)
+    
+    # Get the same store from cache
+    store2 = VectorStoreFactory.get_or_create(VectorStoreType.PERSISTENT, test_settings)
+    assert store2 is store1  # Should be the same instance
+    
+    # Force create new instance
+    store3 = VectorStoreFactory.create(VectorStoreType.PERSISTENT, test_settings, force_new=True)
+    assert store3 is not store1  # Should be a different instance
+    
+    # Both instances should have access to the same data
+    query = np.random.randn(1, 384).astype(np.float32)
+    distances1, indices1 = store1.search(query)
+    distances3, indices3 = store3.search(query)
+    np.testing.assert_array_equal(indices1, indices3)
