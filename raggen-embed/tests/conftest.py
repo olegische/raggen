@@ -6,8 +6,16 @@ import shutil
 import stat
 from datetime import datetime
 import logging
+from unittest.mock import Mock
 
-from src.config.settings import Settings, reset_settings
+from src.config.settings import Settings, reset_settings, TextSplitStrategy as StrategyType
+from src.core.embeddings import EmbeddingService
+from src.core.text_splitting import (
+    TextSplitStrategy,
+    SlidingWindowStrategy,
+    ParagraphStrategy,
+    TextSplitterService
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +64,12 @@ def test_settings():
         "HNSW_EF_CONSTRUCTION": "80",  # Больше точность при построении
         "HNSW_EF_SEARCH": "128",       # Увеличили для лучшей точности
         "N_RESULTS": "10",
-        "FAISS_INDEX_TYPE": "flat_l2"  # По умолчанию точный поиск
+        "FAISS_INDEX_TYPE": "flat_l2",  # По умолчанию точный поиск
+        # Добавляем настройки для text splitting
+        "TEXT_SPLIT_STRATEGY": "sliding_window",
+        "TEXT_MIN_LENGTH": "10",
+        "TEXT_MAX_LENGTH": "100",
+        "TEXT_OVERLAP": "5"
     })
     
     # Create settings
@@ -75,7 +88,42 @@ def test_settings():
     for key in [
         "FAISS_INDEX_PATH", "VECTOR_DIM", "N_CLUSTERS", "N_PROBE",
         "PQ_M", "PQ_BITS", "HNSW_M", "HNSW_EF_CONSTRUCTION",
-        "HNSW_EF_SEARCH", "N_RESULTS", "FAISS_INDEX_TYPE"
+        "HNSW_EF_SEARCH", "N_RESULTS", "FAISS_INDEX_TYPE",
+        "TEXT_SPLIT_STRATEGY", "TEXT_MIN_LENGTH", "TEXT_MAX_LENGTH", "TEXT_OVERLAP"
     ]:
         if key in os.environ:
             del os.environ[key]
+
+# Text splitting fixtures
+@pytest.fixture
+def mock_embedding_service():
+    """Create a mock embedding service."""
+    service = Mock(spec=EmbeddingService)
+    service.get_embedding.return_value = np.array([1.0, 2.0, 3.0])
+    return service
+
+@pytest.fixture
+def sliding_window_strategy(test_settings):
+    """Create a sliding window strategy using test settings."""
+    return SlidingWindowStrategy(
+        min_length=test_settings.text_min_length,
+        max_length=test_settings.text_max_length,
+        overlap=test_settings.text_overlap
+    )
+
+@pytest.fixture
+def paragraph_strategy(test_settings):
+    """Create a paragraph strategy using test settings."""
+    return ParagraphStrategy(
+        min_length=test_settings.text_min_length,
+        max_length=test_settings.text_max_length
+    )
+
+@pytest.fixture
+def text_splitter_service(mock_embedding_service, sliding_window_strategy, test_settings):
+    """Create text splitter service with injected dependencies."""
+    return TextSplitterService(
+        embedding_service=mock_embedding_service,
+        split_strategy=sliding_window_strategy,
+        settings=test_settings
+    )

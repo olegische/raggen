@@ -1,0 +1,1137 @@
+В FastAPI, по умолчанию зависимости реализуются на уровне запроса (request-level). Однако можно организовать зависимости на уровне приложения (application-level) с использованием глобальных объектов, событий жизненного цикла и других подходов.
+
+Подходы к реализации Application-level зависимостей в FastAPI:
+
+1. Использование событий жизненного цикла приложения (startup и shutdown)
+
+FastAPI позволяет запускать код при старте и завершении приложения с помощью событий on_startup и on_shutdown. Эти события можно использовать для создания глобальных зависимостей, которые будут инициализированы один раз на весь жизненный цикл приложения.
+
+Пример:
+
+from fastapi import FastAPI, Depends
+
+app = FastAPI()
+
+# Глобальная зависимость на уровне приложения
+class Database:
+    def __init__(self):
+        self.connection = None
+
+    def connect(self):
+        self.connection = "Database Connection Established"
+
+    def close(self):
+        self.connection = None
+
+    def get_connection(self):
+        return self.connection
+
+db_instance = Database()
+
+# Событие старта приложения
+@app.on_event("startup")
+def startup_event():
+    db_instance.connect()
+    print("Application startup: Database connected")
+
+# Событие завершения приложения
+@app.on_event("shutdown")
+def shutdown_event():
+    db_instance.close()
+    print("Application shutdown: Database disconnected")
+
+# Зависимость для обработчиков
+def get_db():
+    return db_instance.get_connection()
+
+@app.get("/")
+def read_root(db: str = Depends(get_db)):
+    return {"message": f"Using DB connection: {db}"}
+
+Как это работает:
+	1.	startup_event инициализирует глобальную зависимость (db_instance).
+	2.	shutdown_event освобождает ресурсы.
+	3.	В обработчиках маршрутов Depends(get_db) использует уже готовый объект.
+
+Преимущества:
+	•	Глобальный объект создается один раз при старте приложения.
+	•	Можно управлять ресурсами через события жизненного цикла.
+
+2. Использование state в app или request
+
+FastAPI позволяет сохранять глобальные зависимости в атрибуте state объекта приложения (app.state). Это полезно для хранения объектов, которые должны быть доступны на уровне всего приложения.
+
+Пример:
+
+from fastapi import FastAPI, Request, Depends
+
+app = FastAPI()
+
+class Service:
+    def __init__(self):
+        self.data = "Service is ready"
+
+@app.on_event("startup")
+def startup_event():
+    app.state.service = Service()  # Инициализируем зависимость
+
+@app.on_event("shutdown")
+def shutdown_event():
+    app.state.service = None  # Освобождаем ресурсы
+
+def get_service(request: Request):
+    return request.app.state.service
+
+@app.get("/")
+def read_root(service: Service = Depends(get_service)):
+    return {"message": service.data}
+
+Как это работает:
+	1.	Зависимость Service сохраняется в app.state при старте приложения.
+	2.	В обработчике маршрутов функция get_service получает доступ к app.state.service.
+
+Преимущества:
+	•	Простая и быстрая настройка.
+	•	Можно использовать для хранения любых объектов.
+
+3. Singleton-паттерн для глобальных зависимостей
+
+Если необходимо, чтобы зависимость была единственным экземпляром на уровне приложения, можно использовать Singleton-паттерн. Это можно комбинировать с Depends.
+
+Пример:
+
+from fastapi import FastAPI, Depends
+
+app = FastAPI()
+
+class Singleton:
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(Singleton, cls).__new__(cls)
+            cls._instance.data = "Singleton Dependency"
+        return cls._instance
+
+def get_singleton():
+    return Singleton()
+
+@app.get("/")
+def read_root(singleton: Singleton = Depends(get_singleton)):
+    return {"message": singleton.data}
+
+Как это работает:
+	•	Класс Singleton гарантирует, что будет только один его экземпляр.
+	•	Depends(get_singleton) возвращает уже существующий экземпляр класса.
+
+Преимущества:
+	•	Удобно для сервисов или пулов ресурсов.
+	•	Простая реализация.
+
+4. Использование DI-контейнеров (Dependency Injector)
+
+Если требуется более сложная система управления зависимостями на уровне приложения, можно использовать DI-фреймворки, такие как Dependency Injector.
+
+Пример:
+
+from fastapi import FastAPI, Depends
+from dependency_injector import containers, providers
+
+# Создаем сервис
+class Service:
+    def __init__(self, data: str):
+        self.data = data
+
+# DI-контейнер
+class Container(containers.DeclarativeContainer):
+    service = providers.Singleton(Service, data="App-level Dependency")
+
+container = Container()
+
+# FastAPI приложение
+app = FastAPI()
+
+@app.get("/")
+def read_root(service: Service = Depends(container.service)):
+    return {"message": service.data}
+
+Как это работает:
+	1.	Service регистрируется в DI-контейнере как Singleton.
+	2.	FastAPI использует Depends для получения зависимости из контейнера.
+
+Преимущества:
+	•	Четкая структура и разделение зависимостей.
+	•	Подходит для масштабируемых приложений.
+
+Заключение
+
+В FastAPI можно реализовать application-level зависимости следующими способами:
+	1.	События жизненного цикла (startup и shutdown) – для инициализации и освобождения глобальных зависимостей.
+	2.	app.state – простой способ хранения глобальных объектов.
+	3.	Singleton-паттерн – для создания единственного экземпляра зависимости.
+	4.	DI-контейнеры – для сложных проектов с контролем зависимостей.
+
+Для большинства приложений достаточно использовать события startup и shutdown вместе с app.state, чтобы хранить и передавать глобальные зависимости.
+
+В контексте Dependency Injection (DI), контейнеры и провайдеры являются ключевыми концепциями для организации и управления зависимостями в приложении.
+
+1. Контейнер (DI Container)
+
+Контейнер – это центральное хранилище, которое отвечает за:
+	•	Создание экземпляров объектов (зависимостей).
+	•	Управление их жизненным циклом (singleton, factory и т.д.).
+	•	Передачу зависимостей в другие части приложения.
+
+Контейнер организует зависимости и управляет ими, освобождая разработчика от необходимости вручную создавать и связывать объекты.
+
+Пример DI-контейнера:
+
+Контейнер используется для регистрации зависимостей и их последующего получения.
+
+from dependency_injector import containers, providers
+
+# Определение сервиса
+class Database:
+    def __init__(self, url: str):
+        self.url = url
+
+# Контейнер для зависимостей
+class Container(containers.DeclarativeContainer):
+    config = providers.Configuration()  # Конфигурация приложения
+    database = providers.Singleton(Database, url=config.db.url)  # Singleton-провайдер для Database
+
+# Использование контейнера
+container = Container()
+container.config.db.url.from_value("sqlite:///:memory:")  # Установка параметра
+
+db_instance = container.database()
+print(db_instance.url)  # Вывод: sqlite:///:memory:
+
+Основные функции контейнера:
+	1.	Регистрация зависимостей: Конфигурирование того, как создаются и хранятся зависимости.
+	2.	Иерархия зависимостей: Поддержка вложенных контейнеров для сложных систем.
+	3.	Получение зависимостей: Создание или предоставление уже существующего объекта.
+
+2. Провайдер (Provider)
+
+Провайдер – это механизм в контейнере, который отвечает за создание или предоставление объектов-зависимостей. Провайдеры определяют правила создания объектов и их жизненный цикл.
+
+Виды провайдеров:
+	1.	Singleton (Одиночка)
+	•	Создает один экземпляр зависимости и возвращает его при каждом запросе.
+	•	Полезно для ресурсов, которые должны быть созданы только один раз (например, подключение к базе данных).
+Пример Singleton-провайдера:
+
+database = providers.Singleton(Database, url="sqlite:///:memory:")
+db1 = database()
+db2 = database()
+print(db1 is db2)  # True (один и тот же экземпляр)
+
+
+	2.	Factory (Фабрика)
+	•	Создает новый экземпляр зависимости при каждом запросе.
+	•	Полезно, если требуется отдельный экземпляр для каждого использования.
+Пример Factory-провайдера:
+
+database = providers.Factory(Database, url="sqlite:///:memory:")
+db1 = database()
+db2 = database()
+print(db1 is db2)  # False (разные экземпляры)
+
+
+	3.	Resource
+	•	Используется для управления ресурсами, которые должны быть открыты и закрыты (например, файлы, соединения).
+	•	Позволяет автоматически управлять жизненным циклом ресурсов.
+Пример Resource-провайдера:
+
+from dependency_injector.providers import Resource
+from contextlib import contextmanager
+
+@contextmanager
+def db_connection(url):
+    print("Connecting to DB")
+    yield f"Connection to {url}"
+    print("Disconnecting from DB")
+
+database = Resource(db_connection, url="sqlite:///:memory:")
+
+with database() as connection:
+    print(connection)
+
+Вывод:
+
+Connecting to DB
+Connection to sqlite:///:memory:
+Disconnecting from DB
+
+
+	4.	Configuration
+	•	Позволяет хранить и управлять конфигурационными параметрами приложения.
+Пример Configuration-провайдера:
+
+config = providers.Configuration()
+config.db.url.from_value("sqlite:///:memory:")
+print(config.db.url())  # Вывод: sqlite:///:memory:
+
+Контейнеры и провайдеры вместе
+
+Контейнер объединяет провайдеры, предоставляя структурированный способ организации зависимостей.
+
+Полный пример:
+
+from dependency_injector import containers, providers
+
+# Определяем сервисы
+class Config:
+    def __init__(self, url: str):
+        self.url = url
+
+class Database:
+    def __init__(self, config: Config):
+        self.url = config.url
+
+# DI-контейнер
+class Container(containers.DeclarativeContainer):
+    config = providers.Configuration()  # Провайдер для конфигурации
+    config.db.url.from_value("sqlite:///:memory:")
+
+    config_instance = providers.Singleton(Config, url=config.db.url)
+    database = providers.Factory(Database, config=config_instance)
+
+# Использование контейнера
+container = Container()
+
+db1 = container.database()
+db2 = container.database()
+
+print(db1.url)  # Вывод: sqlite:///:memory:
+print(db1 is db2)  # False (Factory создает новые экземпляры)
+
+Итоговые отличия:
+
+Компонент	Назначение
+Контейнер	Управляет зависимостями и их провайдерами.
+Провайдер	Определяет, как создается и возвращается зависимость.
+
+Контейнер объединяет все провайдеры, создавая и управляя зависимостями на основе правил, описанных в провайдерах. Это позволяет гибко конфигурировать приложение и управлять его компонентами.
+
+
+В FastAPI можно реализовать контейнер и провайдеры зависимостей без использования сторонних DI-фреймворков, таких как dependency-injector. Это можно сделать с помощью стандартных инструментов Python и механизмов FastAPI.
+
+Пример контейнера и провайдеров на чистом FastAPI
+
+В этом примере мы:
+	1.	Создаем контейнер как класс для управления зависимостями.
+	2.	Реализуем провайдеры для разных объектов (например, базы данных, сервиса).
+	3.	Используем FastAPI-зависимости (Depends) для внедрения объектов из контейнера.
+
+Структура проекта:
+
+.
+├── main.py        # Главный файл приложения FastAPI
+└── container.py   # Контейнер и провайдеры зависимостей
+
+Файл container.py – реализация контейнера и провайдеров
+
+from typing import Optional
+
+# Пример конфигурации
+class Config:
+    def __init__(self, db_url: str):
+        self.db_url = db_url
+
+# Пример провайдера для базы данных
+class Database:
+    def __init__(self, config: Config):
+        self.connection = f"Connected to {config.db_url}"
+
+    def get_connection(self):
+        return self.connection
+
+# Сервис, зависящий от базы данных
+class UserService:
+    def __init__(self, database: Database):
+        self.database = database
+
+    def get_users(self):
+        # Простая заглушка вместо реального запроса к БД
+        return ["Alice", "Bob", "Charlie"]
+
+# Контейнер зависимостей
+class Container:
+    _config: Optional[Config] = None
+    _database: Optional[Database] = None
+    _user_service: Optional[UserService] = None
+
+    @classmethod
+    def get_config(cls) -> Config:
+        if cls._config is None:
+            cls._config = Config(db_url="sqlite:///:memory:")  # Конфигурация БД
+        return cls._config
+
+    @classmethod
+    def get_database(cls) -> Database:
+        if cls._database is None:
+            cls._database = Database(config=cls.get_config())  # Создание БД с конфигурацией
+        return cls._database
+
+    @classmethod
+    def get_user_service(cls) -> UserService:
+        if cls._user_service is None:
+            cls._user_service = UserService(database=cls.get_database())  # Создание сервиса с БД
+        return cls._user_service
+
+Файл main.py – FastAPI-приложение с внедрением зависимостей
+
+from fastapi import FastAPI, Depends
+from container import Container, UserService
+
+app = FastAPI()
+
+# Зависимость для получения UserService
+def get_user_service() -> UserService:
+    return Container.get_user_service()
+
+@app.get("/")
+def read_root():
+    return {"message": "Welcome to the FastAPI app with custom DI!"}
+
+@app.get("/users")
+def get_users(user_service: UserService = Depends(get_user_service)):
+    """Маршрут для получения списка пользователей."""
+    users = user_service.get_users()
+    return {"users": users}
+
+@app.get("/db_connection")
+def get_db_connection():
+    """Маршрут для проверки соединения с БД."""
+    db = Container.get_database()
+    return {"db_connection": db.get_connection()}
+
+Как это работает:
+	1.	Контейнер (Container):
+	•	Управляет созданием и хранением зависимостей (конфигурации, базы данных, сервисов).
+	•	Использует Singleton-подход: зависимости создаются один раз и переиспользуются.
+	2.	Провайдеры:
+	•	get_config – создает конфигурацию.
+	•	get_database – создает подключение к базе данных, используя конфигурацию.
+	•	get_user_service – создает сервис, который использует базу данных.
+	3.	FastAPI-зависимости:
+	•	Функция get_user_service используется как Depends для маршрутов, чтобы передать UserService в обработчик.
+	4.	Singleton:
+	•	Объекты создаются один раз при первом запросе и сохраняются в атрибутах класса Container.
+
+Результат работы:
+	1.	GET /
+
+{
+  "message": "Welcome to the FastAPI app with custom DI!"
+}
+
+
+	2.	GET /users
+
+{
+  "users": ["Alice", "Bob", "Charlie"]
+}
+
+
+	3.	GET /db_connection
+
+{
+  "db_connection": "Connected to sqlite:///:memory:"
+}
+
+Преимущества подхода:
+	1.	Без сторонних библиотек: Используются только стандартные механизмы Python и FastAPI.
+	2.	Гибкость: Контейнер и провайдеры можно легко расширить и кастомизировать.
+	3.	Singleton: Зависимости создаются один раз и переиспользуются, что повышает производительность.
+	4.	Ясная структура: Логика создания зависимостей отделена от бизнес-логики.
+
+Заключение
+
+Этот подход демонстрирует, как можно реализовать DI-контейнер и провайдеры на чистом FastAPI:
+	•	Контейнер централизует создание зависимостей.
+	•	Провайдеры управляют жизненным циклом зависимостей.
+	•	Depends в FastAPI позволяет внедрять зависимости в маршруты.
+
+Такой подход подходит для небольших и средних проектов, где использование дополнительных DI-фреймворков нецелесообразно.
+
+
+Если в вашем контейнере на FastAPI необходимо поддерживать как синглтоны, так и фабрики (для создания новых экземпляров зависимостей на каждый запрос), то можно сделать это с помощью отдельных методов для провайдеров.
+
+Разница между Singleton и Factory:
+	1.	Singleton: Экземпляр создается один раз и переиспользуется.
+	2.	Factory: Новый экземпляр создается каждый раз, когда запрашивается зависимость.
+
+Пример реализации контейнера с Singleton и Factory
+
+В этом примере:
+	•	Database – будет синглтоном.
+	•	RequestScopedService – будет фабрикой, создающей новый экземпляр на каждый запрос.
+
+Структура проекта:
+
+.
+├── main.py        # Главный файл FastAPI-приложения
+└── container.py   # Контейнер и провайдеры зависимостей
+
+Файл container.py – реализация контейнера
+
+from typing import Optional
+from datetime import datetime
+
+
+# Конфигурация приложения
+class Config:
+    def __init__(self, db_url: str):
+        self.db_url = db_url
+
+
+# Синглтон-зависимость (база данных)
+class Database:
+    def __init__(self, config: Config):
+        self.connection = f"Connected to {config.db_url}"
+        self.created_at = datetime.utcnow()
+
+    def get_connection(self):
+        return self.connection
+
+
+# Фабрика-зависимость (сервис, создающийся на каждый запрос)
+class RequestScopedService:
+    def __init__(self):
+        self.created_at = datetime.utcnow()
+
+    def get_time(self):
+        return f"Request service created at {self.created_at}"
+
+
+# Контейнер зависимостей
+class Container:
+    _config: Optional[Config] = None
+    _database: Optional[Database] = None
+
+    @classmethod
+    def get_config(cls) -> Config:
+        if cls._config is None:
+            cls._config = Config(db_url="sqlite:///:memory:")
+        return cls._config
+
+    @classmethod
+    def get_database(cls) -> Database:
+        """Синглтон-зависимость"""
+        if cls._database is None:
+            cls._database = Database(config=cls.get_config())
+        return cls._database
+
+    @classmethod
+    def create_request_service(cls) -> RequestScopedService:
+        """Фабрика для создания новой зависимости на каждый вызов"""
+        return RequestScopedService()
+
+Файл main.py – FastAPI-приложение с контейнером
+
+from fastapi import FastAPI, Depends
+from container import Container, Database, RequestScopedService
+
+app = FastAPI()
+
+# Зависимость для базы данных (Singleton)
+def get_database() -> Database:
+    return Container.get_database()
+
+# Зависимость для фабрики (новый экземпляр каждый раз)
+def get_request_service() -> RequestScopedService:
+    return Container.create_request_service()
+
+@app.get("/")
+def read_root():
+    return {"message": "Welcome to FastAPI with Singleton and Factory DI!"}
+
+@app.get("/db_connection")
+def get_db_connection(db: Database = Depends(get_database)):
+    """Возвращает статус соединения с базой данных (синглтон)."""
+    return {
+        "db_connection": db.get_connection(),
+        "created_at": db.created_at
+    }
+
+@app.get("/request_service")
+def get_request_service_info(service: RequestScopedService = Depends(get_request_service)):
+    """Создает новый сервис на каждый запрос (фабрика)."""
+    return {"service_created_at": service.get_time()}
+
+@app.get("/combined")
+def get_combined(
+    db: Database = Depends(get_database),
+    service: RequestScopedService = Depends(get_request_service)
+):
+    """Демонстрирует использование синглтона и фабрики одновременно."""
+    return {
+        "db_connection": db.get_connection(),
+        "db_created_at": db.created_at,
+        "service_created_at": service.get_time()
+    }
+
+Как это работает:
+	1.	Singleton:
+	•	Метод Container.get_database() создает один экземпляр Database и переиспользует его.
+	•	Все маршруты, которые используют get_database, получают один и тот же объект.
+	2.	Factory:
+	•	Метод Container.create_request_service() всегда создает новый экземпляр RequestScopedService.
+	•	Каждый вызов зависимости через Depends(get_request_service) приводит к созданию нового объекта.
+
+Запуск приложения
+
+Запустите приложение командой:
+
+uvicorn main:app --reload
+
+Результат:
+	1.	GET /db_connection (Singleton):
+	•	При первом запросе создается экземпляр базы данных.
+	•	При последующих запросах возвращается тот же объект.
+Ответ:
+
+{
+    "db_connection": "Connected to sqlite:///:memory:",
+    "created_at": "2024-01-01T12:00:00.123456"
+}
+
+
+	2.	GET /request_service (Factory):
+	•	Каждый новый запрос создает новый экземпляр сервиса.
+Ответ:
+
+{
+    "service_created_at": "Request service created at 2024-01-01T12:00:05.654321"
+}
+
+
+	3.	GET /combined:
+	•	Показывает одновременное использование синглтона и фабрики.
+Ответ:
+
+{
+    "db_connection": "Connected to sqlite:///:memory:",
+    "db_created_at": "2024-01-01T12:00:00.123456",
+    "service_created_at": "Request service created at 2024-01-01T12:00:10.987654"
+}
+
+Заключение:
+	1.	Singleton-зависимость создается один раз и используется повторно.
+	2.	Factory-зависимость создается каждый раз при новом запросе.
+
+FastAPI позволяет гибко управлять зависимостями с помощью Depends и чистого Python-кода без сторонних DI-фреймворков.
+
+Dependency Injection (DI) может быть использована в Next.js приложениях, но она не так распространена, как в бэкенд-фреймворках, например, FastAPI, NestJS или Spring. Это связано с тем, что Next.js уже реализует концепцию компонентов и их композиции, что снижает необходимость в классическом DI.
+
+Почему DI менее распространен в Next.js?
+	1.	React-композиция компонентов:
+	•	В React (а значит и в Next.js) зависимости передаются через props или Context API.
+	•	Это делает DI менее востребованным, так как зависимости можно инкапсулировать на уровне компонентов.
+	2.	Server-Side Rendering (SSR) и Static Site Generation (SSG):
+	•	В Next.js серверный код выполняется на запросах к серверу или при генерации страниц. DI-фреймворки могут добавить ненужную сложность в обработку запроса.
+	3.	Клиентский и серверный код:
+	•	В Next.js код может выполняться как на клиенте, так и на сервере. Использование DI-фреймворков может усложнить разграничение клиентских и серверных зависимостей.
+
+Когда DI оправдан в Next.js?
+
+1. Сложные приложения с бэкенд-логикой
+
+Если в Next.js приложении используется большое количество бизнес-логики, сервисов и репозиториев, то DI может помочь:
+	•	Уменьшить связность между компонентами.
+	•	Облегчить тестирование путем подмены зависимостей.
+
+Например, в приложениях, где требуется работать с сервисами или слоями данных:
+
+// ExampleService.ts
+export class ExampleService {
+  getData() {
+    return "Hello from Service!";
+  }
+}
+
+// ExampleComponent.tsx
+import React from "react";
+import { ExampleService } from "./ExampleService";
+
+const exampleService = new ExampleService(); // Внедряем вручную
+
+export const ExampleComponent = () => {
+  return <div>{exampleService.getData()}</div>;
+};
+
+Если таких сервисов много, можно рассмотреть DI-контейнер.
+
+2. Модульный подход (сервисы и зависимости)
+
+В Next.js на серверной стороне (например, API Routes или getServerSideProps) можно использовать DI для работы с базой данных, сервисами и логикой.
+
+Пример внедрения зависимостей вручную:
+
+// services/userService.ts
+export class UserService {
+  async getUsers() {
+    return [{ id: 1, name: "Alice" }, { id: 2, name: "Bob" }];
+  }
+}
+
+// pages/api/users.ts
+import { NextApiRequest, NextApiResponse } from "next";
+import { UserService } from "../../services/userService";
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const userService = new UserService(); // Вручную создаем зависимость
+  const users = await userService.getUsers();
+  res.status(200).json(users);
+}
+
+Если сервисов много, можно организовать контейнер зависимостей.
+
+3. Тестирование и мокирование
+
+DI в Next.js оправдан, когда требуется писать тесты с легкой подменой зависимостей (например, сервисов, БД-клиентов и т.д.).
+
+Пример с DI-контейнером:
+
+// container.ts
+import { UserService } from "./services/userService";
+
+export const container = {
+  userService: new UserService(),
+};
+
+// pages/api/users.ts
+import { NextApiRequest, NextApiResponse } from "next";
+import { container } from "../../container";
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const users = await container.userService.getUsers();
+  res.status(200).json(users);
+}
+
+В тестах можно заменить container.userService на мок-объект.
+
+Инструменты для DI в Next.js
+
+Если необходимо внедрить DI в Next.js, можно использовать сторонние библиотеки:
+	1.	InversifyJS – популярный DI-контейнер для TypeScript.
+	2.	tsyringe – легковесный DI-контейнер от Microsoft.
+	3.	Awilix – гибкий и современный DI-фреймворк для Node.js.
+
+Пример с InversifyJS:
+
+npm install inversify reflect-metadata
+
+// service.ts
+import { injectable } from "inversify";
+
+@injectable()
+export class ExampleService {
+  getData() {
+    return "Data from DI Service!";
+  }
+}
+
+// container.ts
+import { Container } from "inversify";
+import { ExampleService } from "./service";
+
+const container = new Container();
+container.bind<ExampleService>(ExampleService).toSelf();
+
+export { container };
+
+// pages/api/di-example.ts
+import { NextApiRequest, NextApiResponse } from "next";
+import { container } from "../../container";
+import { ExampleService } from "../../service";
+
+export default function handler(req: NextApiRequest, res: NextApiResponse) {
+  const service = container.get(ExampleService);
+  res.status(200).json({ message: service.getData() });
+}
+
+Заключение
+
+DI в Next.js:
+	•	Не является обязательным, так как React-композиция и Context API хорошо справляются с передачей зависимостей.
+	•	Может быть полезен для больших приложений с бэкенд-слоями и сервисами, где требуется гибкость и тестируемость.
+	•	Использование DI-фреймворков, таких как InversifyJS или tsyringe, оправдано при большом количестве сервисов и зависимостей.
+
+Если ваше приложение простое или небольшое, DI не нужен — передавайте зависимости через props или используйте Context API.
+
+Несмотря на все преимущества Dependency Injection (DI), чрезмерное использование или неправильное внедрение может привести к ненужной сложности и ухудшению архитектуры. Вот основные ситуации, когда не стоит увлекаться DI:
+
+1. Простые или небольшие проекты
+
+Если проект маленький и не имеет сложной логики или множества зависимостей, использование DI создаст избыточность.
+
+Почему?
+	•	В небольших проектах можно легко управлять зависимостями вручную.
+	•	Добавление DI-фреймворка усложнит код, требуя больше настроек и абстракций.
+
+Пример:
+Если в приложении всего несколько функций и зависимостей, их можно создавать напрямую, передавая параметры явно.
+
+2. Избыточная абстракция
+
+Когда DI используется для всех зависимостей, даже тех, которые никогда не будут подменяться или масштабироваться, это приводит к ненужным абстракциям.
+
+Почему?
+	•	Чрезмерные абстракции делают код менее читаемым.
+	•	Разработчики тратят время на создание интерфейсов и контейнеров для зависимостей, которые никогда не изменятся.
+
+Пример:
+Если вы внедряете DI для простого логгера или утилиты без альтернативных реализаций, это излишне.
+
+# Пример избыточности
+class ILogger:
+    def log(self, message: str): pass
+
+class ConsoleLogger(ILogger):
+    def log(self, message: str):
+        print(message)
+
+def example_function(logger: ILogger):
+    logger.log("Example")
+
+# Зачем здесь интерфейс, если будет всегда один ConsoleLogger?
+
+3. Усложнение тестирования
+
+Хотя DI часто используется для тестируемости, его неправильное внедрение может сделать тесты более сложными и запутанными.
+
+Почему?
+	•	Подмена зависимостей через DI требует дополнительной настройки (например, мок-контейнеров).
+	•	В простых тестах можно просто передавать зависимости напрямую без DI.
+
+Пример:
+Если тесты требуют создания большого количества моков и фикстур для простого модуля, DI усложняет ситуацию.
+
+4. Излишняя гибкость
+
+Если в приложении не требуется гибкость в замене реализаций зависимостей (например, смена базы данных или сервисов), DI становится избыточным.
+
+Почему?
+	•	Разработка абстракций ради “гибкости на будущее” ведет к “premature optimization”.
+	•	На практике гибкость может никогда не понадобиться.
+
+5. Перегруженные фреймворки DI
+
+Использование сложных DI-фреймворков, таких как InversifyJS, Spring или аналогов, в проектах, где можно обойтись простыми решениями, ведет к избыточности.
+
+Почему?
+	•	Фреймворки добавляют дополнительную зависимость, накладные расходы и время на изучение.
+	•	Простая ручная реализация контейнера для зависимостей может быть достаточной.
+
+6. Производительность
+
+DI-контейнеры, особенно если они динамически разрешают зависимости (reflection, runtime-резолверы), могут добавлять накладные расходы на производительность.
+
+Почему?
+	•	DI-контейнеры могут замедлять время старта приложения.
+	•	Если приложение критично к производительности, прямое создание зависимостей может быть быстрее.
+
+7. Усложнение кода для команды
+
+Если команда не знакома с принципами DI, использование DI-контейнеров или фреймворков приведет к непониманию кода и ухудшению поддержки.
+
+Почему?
+	•	Разработчики должны изучить дополнительные концепции: контейнеры, провайдеры, жизненные циклы зависимостей.
+	•	Код становится менее “прозрачным” из-за скрытого создания зависимостей.
+
+Признаки, что DI используется избыточно:
+	1.	Пустые интерфейсы: вы создаете интерфейсы, которые имеют только одну реализацию.
+	2.	Сложность добавления зависимостей: слишком много конфигураций DI-контейнера для простых задач.
+	3.	Небольшая бизнес-логика: DI не дает реальной пользы в простых модулях.
+	4.	Необоснованные абстракции: код становится более многословным и сложным.
+
+Заключение
+
+Dependency Injection – мощный инструмент, но использовать его стоит разумно. Не увлекайтесь абстракциями и DI-фреймворками, если:
+	•	Проект небольшой или простой.
+	•	Гибкость к смене зависимостей не требуется.
+	•	Команда не готова к работе с DI.
+	•	Производительность критична, а DI-контейнер создает накладные расходы.
+
+Вместо этого следуйте принципу “YAGNI” (You Aren’t Gonna Need It) – добавляйте DI только тогда, когда это действительно необходимо.
+
+FastAPI и Dependency Injection: правда или вымысел?
+Средний
+11 мин
+3.4K
+Python*Программирование*Open source*
+Туториал
+В свое время FastAPI прогремел как гром среди ясного неба - тут тебе и минималистичный API аля-Flask (все устали от Django, диктующего свои правила), и OpenAPI документация из коробки, и удобное тестирование, и хайповая асинхронность. Буквально все, что нужно для свободы творчества, и никаких ограничений! Да еще и Depends завезли! В тот момент это был культурный шок - Dependency Injection в Python? Разве это не что-то из Java?
+
+FastAPI показал, что DI - это паттерн, упрощающий разработку вне зависимости от языка программирования. Теперь DI как фича является практически неотъемлемым элементом любого нового Python-фреймворка (Litestar/Blacksheep/FastStream/etc), ведь людям это нужно. Все хотят "как в FastAPI".
+
+Но дьявол кроется в деталях. А вы уверены, что те самые Depends == Dependency Injection? Уверены, что пишете код на FastAPI правильно?
+
+Что Tiangolo (создатель FastAPI) прививает вам "лучшие практики"?
+
+В рамках статьи мы рассмотрим различные подходы к организации зависимостей в рамках FastAPI проекта, оценим их с точки зрения удобства использования и постараемся разобраться, как же все-таки "правильно" готовить DI в FastAPI.
+
+Что такое DI и зачем он нам нужен?
+Dependency Injection - это паттерн, сильно помогающий следовать принципу Инверсии зависимостей (DIP - Dependency Inversion Principle) из soliD.
+
+DIP заключается в том, что наша бизнес-логика не должна зависеть от деталей реализации (базы данных, протокола взаимодействия, конкретных библиотек). Вместо этого она должна запрашивать абстрактные интерфейсы, декларирующие методы, которые ей необходимы. Эти "абстрактные интерфейсы" находятся в ядре вашей системы, т.к. жизненно необходимы для ее функционирования.
+
+А вот с помощью паттерна Dependency Injection "реальные" имплементации этих интерфейсов (которые знают про конкретные базы данных и тд) будут доставляться в вашу логику извне при инициализации проекта (тот самый Injection).
+
+Т.е. вместо подобного кода:
+
+class TokenChecker:
+    def __init__(self) -> None:
+        self.storage = Redis()
+
+    def check_token(self, token: str) -> bool:
+        return self.storage.get(token) is not None
+
+checker = TokenChecker()
+Мы должны писать нечто такое:
+
+from typing import Protocol
+
+# находится в БЛ, так как нужен для ее функционирования
+class Storage(Protocol):
+    def get(self, token: str) -> str | None:
+        ...
+
+class TokenChecker:
+    def __init__(self, storage: Storage) -> None:
+        self.storage = storage
+
+    def check_token(self, token: str) -> bool:
+        return self.storage.get(token) is not None
+
+real_storage = Redis() # объект Redis подходит под интерфейс Storage
+checker = TokenChecker(real_storage)
+Кода стало больше, но зачем? - Теперь TokenChecker больше не знает о том, что работает с Redis, а это позволяет нам
+
+Заменить Redis на Memcached или даже хранение в памяти при необходимости
+
+Поместить в качестве Storage mock-объект в тестах удобным и понятным способом
+
+Изначальная мотивация действительно пришла из Java и других компилируемых языков. Смысл в том, что внешний слой подвергается изменениям часто, а вот внутренний - редко. Если мы зависим от внешнего слоя в нашей бизнес-логике (банально делаем импорты оттуда), то при повторной компиляции проекта эти модули также придется перекомпилировать, хотя изменений в них не произошло (изменения были в модулях, от которых они зависят). Неконтролируемые зависимости приводят к тому, что весь проект пересобирается при изменении любой строки в любом файле и тем самым многочасовым "код компилируется".
+
+Однако, DI - это хорошая практика, которая приносит ощутимую пользу в любых языках.
+
+Иногда вы можете встретить еще и формулировку Inversion of Control (IoC), что суть - о том же самом. Когда мы следуем подходу Dependency Injection, у нас образуется отдельная группа функций и классов, выполняющих только одну задачу - создание других объектов.
+В сложном приложении такой компонент может содержать большое количество функций, контролировать как создание, так и корректную очистку объектов и, что самое главное - их взаимосвязь. Для упрощения работы с такими фабриками придумали отдельный тип библиотек - IoC-контейнеры (DI-фреймворки).
+
+DI в FastAPI по Tiangolo
+Одна из основных фич FastAPI - его Depends, которая как раз позиционируется как реализация Dependency Injection принципа. Давайте посмотрим, как Tiangolo предлагает ее использовать:
+
+from typing import Annotated
+
+from fastapi import Depends
+
+async def common_parameters(
+    q: str | None = None,
+    skip: int = 0,
+    limit: int = 100,
+):
+    return { "q": q, "skip": skip, "limit": limit }
+
+@app.get("/items")
+async def read_items(
+    commons: Annotated[dict, Depends(common_parameters)],
+):
+    return commons
+
+@app.get("/users")
+async def read_users(
+    commons: Annotated[dict, Depends(common_parameters)],
+):
+    return commons
+В данном примере FastAPI распознает функцию common_parameters как зависимость, т.к. она была передана в Depends. При поступлении запроса на read_users обработчик, FastAPI вызовет все "зависимости" данного метода, а затем передаст результаты их выполнения в качестве аргументов основной функции. Подробнее о том, как это работает, можно прочитать в документации FastAPI
+
+"Так вы можете переиспользовать логику между разными эндпоинтами" - вот как аргументирует использование Depends Tiangolo. Однако, это не Dependency Injection.
+
+Просто давайте взглянем на следующий код:
+
+from typing import Annotated
+
+from fastapi import Request
+
+async def common_parameters(
+    q: str | None = None,
+    skip: int = 0,
+    limit: int = 100,
+):
+    return { "q": q, "skip": skip, "limit": limit }
+
+@app.get("/items")
+async def read_items(request: Request):
+    commons = await common_parameters(**request.query_params)
+    return commons
+
+@app.get("/users")
+async def read_users(request: Request):
+    commons = await common_parameters(**request.query_params)
+    return commons
+Разве это не то же самое "переиспользование логики", с которым нам хочет помочь Tiangolo? Кажется, его помощь - это просто еще один слой синтаксического сахара (не бесплатного, конечно).
+
+Однако, Dependency Injection тут все-таки есть, т.к. есть возможность заменить зависимость через механизм dependency-overrides
+
+async def override_dependency(q: str | None = None):
+    return {"q": q, "skip": 5, "limit": 10}
+
+app.dependency_overrides[common_parameters] = override_dependency
+В данном случае мы подменяем все "зависимости" вида Depends(common_parameters) на Depends(override_dependency) по всему проекту. Т.е., когда запрос придет в обработчик, вместо оригинальной функции common_parameters будет вызвана override_dependency вне зависимости от сигнатуры самого обработчика.
+
+В варианте с прямым использованием функции это невозможно.
+
+Правда, механизм позиционируется "для тестов" и все еще не помогает соблюсти DIP - мы подменяем зависимость от реализации на другую зависимость от реализации. Что может только путать людей, работающих с кодовой базой.
+
+Но не все потеряно и мы можем доработать Depends так, чтобы это был настоящий DI с соблюдением DIP.
+
+"Настоящий" DI в FastAPI
+Не претендую на авторство данного подхода, но готов принять все шишки за его использование, т.к. не нашел способа сделать DI лучше.
+
+Так вот: помним, что в DI нам нужно завязывать на абстракцию, а реализацию Inject'ить?
+
+В FastAPI МОЖНО реализовать Dependency Injection с соблюдением DIP. Но не совсем тем способом, которым планировал Tiangolo.
+
+В FastAPI у нас есть глобальный словарь app.dependency_overrides, который предлагается использовать для "тестирования зависимостей" (в документации). Однако, по всем внешним признакам - это контейнер зависимостей. И мы можем его использовать как раз по прямому назначению IoC контейнера - Inject'ить зависимости.
+
+Давайте разбираться по порядку.
+
+Вводим абстракцию
+Давайте представим, что нам нужно идентифицировать пользователя по наличию токена в кеше? Код будет несколько упрощен относительно реального, но смысл от этого становится только яснее.
+
+Для начала введем интерфейс объекта, с помощью которого мы как раз будем валидировать токен:
+
+from typing import Protocol
+
+class TokenRepo(Protocol):
+    async def get_user_by_token(self, token: str) -> str | None:
+        ...
+
+    async def set_user_token(self, token: str, username: str) -> None:
+        ...
+Зависим от абстракции
+Теперь нам нужно "завязаться" на эту абстракцию в нашем эндпоинте:
+
+from typing import Annotated
+from fastapi import FastAPI, Depends
+
+app = FastAPI()
+
+@app.get("/{token}")
+async def get_user_by_token(
+    token: str,
+    token_repo: Annotated[TokenRepo, Depends()],  # "запрашиваем" абстракцию
+) -> str | None:
+    return await token_repo.get_user_by_token(token)
+Пишем реализацию
+Нам остается только реализовать где-то заданный интерфейс и поместить эту реализацию в наш контейнер зависимостей (откуда она попадет в исполняемый код вместо абстракции).
+
+Реализация протокола для работы с Redis:
+
+from redis.asyncio import Redis
+
+class RedisTokenRepo(TokenRepo):
+    def __init__(
+        self,
+        redis: Redis,
+        expiration: str,
+    ) -> None:
+        self.redis = redis
+        self.token_expiration = expiration
+
+    async def get_user_by_token(self, token: str) -> str | None:
+        if username := await self.redis.get(token):
+            return username.decode()
+
+    async def set_user_token(self, token: str, username: str) -> None:
+        await self.redis.set(
+            name=token,
+            value=username,
+            ex=self.token_expiration,
+        )
+Используем реализацию вместо абстракции
+Ну и "помещаем" нашу реализацию в FastAPI IoC Container:
+
+def setup_ioc_container(
+    app: FastAPI,
+) -> FastAPI:
+    settings_object = {  # mock настроек
+        "redis_url": "redis://localhost:6379",
+        "token_expiration": 300,
+    }
+
+    redis_repo = RedisTokenRepo(
+        redis=Redis.from_url(settings_object["redis_url"]),
+        expiration=settings_object["token_expiration"],
+    )
+
+    app.dependency_overrides.update({
+        TokenRepo: lambda: redis_repo,
+    })
+
+    return app
+Реальной зависимостью в нашем случае является lambda: redis_repo. Именно эта функция будет вызываться при каждом запросе с Annotated[TokenRepo, Depends()] зависимостью.
+
+Мы реализовали ее через lambda для того, чтобы избежать вызова конструктора RedisTokenRepo на каждый вызов, а сделать этот объект "синглтоном".
+
+Так выглядит DI в FastAPI "здорового человека". Но не совсем.
+
+Боремся с FastAPI
+К сожалению, Tiangolo не планировал использование Depends таким образом. Он не хочет, чтобы мы зависили от "абстракции". Поэтому в нашу OpenAPI схему просочилось что-то странное (args, kwargs?):
+
+
+Это происходит потому что FastAPI парсит сигнатуру "зависимости", которую мы запрашиваем (Annotated[TokenRepo, Depends()]), а именно - __init__ метод класса.
+
+class TokenRepo(Protocol):
+     # init класса Protocol по умолчанию содержит args, kwargs
+     def __init__(self, *args, **kwargs): ...
+Вот FastAPI и нашел "лишние" аргументы и нарисовал их в сигнатуре.
+
+Для того, чтобы от этого избавить нужно "спрятать" от FastAPI сигнатуру исходной "абстракции". (Можно еще отнаследоваться от abc.ABC вместо typing.Protocol, но это уже "протекание" деталей FastAPI в наши абстракции, чего мы не хотим)
+
+Сделать это можно следующим образом:
+
+from typing import Callable, Any
+
+class Stub:
+    def __init__(self, dependency: Callable[..., Any]) -> None:
+        """Сохраняем нашу абстракцию."""
+        self._dependency = dependency
+
+    def __call__(self) -> None:
+        """Выкинем ошибку, если забыли подменить реализацию при старте приложения."""
+        raise NotImplementedError(f"You forgot to register `{self._dependency}` implementation.")
+
+    def __hash__(self) -> int:
+        """Обманываем app.dependency_overrides, чтобы он считал Stub реальной зависимостью"""
+        return hash(self._dependency)
+
+    def __eq__(self, __value: object) -> bool:
+        """Обманываем app.dependency_overrides, чтобы он считал Stub реальной зависимостью"""
+        if isinstance(__value, Stub):
+            return self._dependency == __value._dependency
+        else:
+            return self._dependency == __value
+Теперь мы должны "запрашивать" зависимость следующим образом:
+
+@app.get("/{token}")
+async def get_user_by_token(
+    token: str,
+    token_repo: Annotated[TokenRepo, Depends(Stub(TokenRepo))]
+): ...
+Уже не так "сахарно", зато в схему ничего не течет.
+
+
+Резюме
+Dependency Injection в FastAPI возможен, однако:
+
+требует дополнительных приседаний, чтобы ничего не утекало в схему
+
+требует дополнительных приседаний для реализации Application-level зависимостей (объктов, которые создаются 1 раз при старте приложения)
+
+требует дополнительных приседаний для регистрации зависимостей

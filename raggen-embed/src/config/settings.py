@@ -1,3 +1,4 @@
+"""Application settings."""
 from typing import List, Literal
 from functools import lru_cache
 from pydantic_settings import BaseSettings
@@ -14,6 +15,11 @@ class IndexType(str, Enum):
     IVF_FLAT = "ivf_flat"  # Approximate search with clustering, requires training
     IVF_PQ = "ivf_pq"  # Compressed vectors with clustering, requires training
     HNSW_FLAT = "hnsw_flat"  # Graph-based search, no training but has parameters
+
+class TextSplitStrategy(str, Enum):
+    """Available text splitting strategies."""
+    SLIDING_WINDOW = "sliding_window"
+    PARAGRAPH = "paragraph"
 
 class Settings(BaseSettings):
     """Application settings."""
@@ -154,30 +160,34 @@ class Settings(BaseSettings):
         description="Path to save/load FAISS index"
     )
     
-    # Paragraph processing settings
-    paragraph_max_length: int = Field(
-        default=int(os.getenv("PARAGRAPH_MAX_LENGTH", "1000")),
-        description="Maximum length of a paragraph"
+    # Text splitting settings
+    text_split_strategy: TextSplitStrategy = Field(
+        default=TextSplitStrategy(os.getenv("TEXT_SPLIT_STRATEGY", "sliding_window")),
+        description="Strategy for splitting text (sliding_window or paragraph)"
     )
-    paragraph_min_length: int = Field(
-        default=int(os.getenv("PARAGRAPH_MIN_LENGTH", "100")),
-        description="Minimum length of a paragraph"
+    text_min_length: int = Field(
+        default=int(os.getenv("TEXT_MIN_LENGTH", "100")),
+        description="Minimum length of a text chunk"
     )
-    paragraph_overlap: int = Field(
-        default=int(os.getenv("PARAGRAPH_OVERLAP", "100")),
-        description="Number of characters to overlap between paragraphs"
+    text_max_length: int = Field(
+        default=int(os.getenv("TEXT_MAX_LENGTH", "1000")),
+        description="Maximum length of a text chunk"
+    )
+    text_overlap: int = Field(
+        default=int(os.getenv("TEXT_OVERLAP", "50")),
+        description="Number of characters to overlap between chunks (for sliding window)"
     )
     preserve_sentences: bool = Field(
         default=bool(os.getenv("PRESERVE_SENTENCES", "True")),
-        description="Whether to preserve sentence boundaries when splitting paragraphs"
+        description="Whether to preserve sentence boundaries when splitting text"
     )
     context_window_size: int = Field(
         default=int(os.getenv("CONTEXT_WINDOW_SIZE", "200")),
-        description="Size of context window before and after paragraph"
+        description="Size of context window before and after chunk"
     )
     embedding_merge_strategy: str = Field(
         default=os.getenv("EMBEDDING_MERGE_STRATEGY", "mean"),
-        description="Strategy for merging paragraph embeddings (mean or weighted)"
+        description="Strategy for merging embeddings (mean or weighted)"
     )
     
     @property
