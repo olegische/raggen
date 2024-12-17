@@ -6,7 +6,7 @@ from typing import List, Optional
 from .base import TextSplitStrategy
 from .factory import TextSplitStrategyFactory
 from ..embeddings import EmbeddingService
-from ...config.settings import Settings, get_settings
+from config.settings import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 
