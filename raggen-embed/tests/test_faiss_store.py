@@ -1,3 +1,12 @@
+"""Tests for FAISS vector store implementation.
+
+This module contains tests for the FAISSVectorStore implementation, including:
+- Basic vector store operations (add, search)
+- Different FAISS index types (FLAT_L2, IVF_FLAT, IVF_PQ, HNSW_FLAT)
+- Performance and accuracy benchmarks
+- Vector normalization impact
+- Large dataset handling
+"""
 import os
 import tempfile
 import shutil
