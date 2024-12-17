@@ -12,6 +12,7 @@ from config.settings import Settings
 from api.embeddings import router as embeddings_router
 from api.documents import router as documents_router
 from utils.logging import get_logger
+from container.setup import setup_di, cleanup_di
 
 logger = get_logger(__name__)
 
@@ -104,6 +105,15 @@ def create_app(settings: Settings = None) -> FastAPI:
         )
         
         return response
+    
+    # Setup dependency injection
+    setup_di(app, settings)
+    
+    # Register cleanup on shutdown
+    @app.on_event("shutdown")
+    async def shutdown_event():
+        """Cleanup resources on shutdown."""
+        cleanup_di()
     
     # Include routers
     app.include_router(embeddings_router, prefix="/api/v1", tags=["embeddings"])
