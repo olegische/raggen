@@ -5,14 +5,6 @@ from unittest.mock import Mock
 from core.vector_store.service import VectorStoreService
 from core.vector_store.base import VectorStore
 from core.vector_store.factory import VectorStoreFactory, VectorStoreType
-from config.settings import Settings
-
-@pytest.fixture
-def test_settings():
-    """Create test settings."""
-    settings = Settings()
-    settings.vector_store_type = VectorStoreType.FAISS.value
-    return settings
 
 @pytest.fixture
 def mock_store():

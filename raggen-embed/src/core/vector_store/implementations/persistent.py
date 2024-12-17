@@ -1,12 +1,15 @@
 import os
-from typing import Optional, Tuple
+from typing import Optional, Tuple, TYPE_CHECKING
 from datetime import datetime
 import warnings
 import numpy as np
 
 from ..base import VectorStore
-from config.settings import Settings, VectorStoreType
+from config.settings import Settings, VectorStoreImplementationType
 from utils.logging import get_logger
+
+if TYPE_CHECKING:
+    from ..factory import VectorStoreFactory
 
 logger = get_logger(__name__)
 
@@ -16,7 +19,7 @@ class PersistentStore(VectorStore):
     def __init__(
         self,
         settings: Settings,
-        store: Optional[VectorStore] = None,
+        factory: 'VectorStoreFactory',
         auto_save: bool = True,
     ):
         """
@@ -24,30 +27,29 @@ class PersistentStore(VectorStore):
         
         Args:
             settings: Settings instance (required)
-            store: Vector store instance to wrap (default: new FAISSVectorStore)
+            factory: Vector store factory instance (required)
             auto_save: Whether to automatically save after modifications
             
         Raises:
-            ValueError: If settings is not provided
-            TypeError: If store is provided but not a VectorStore instance
+            ValueError: If settings or factory is not provided
             RuntimeError: If directory creation or access fails
         """
         if not settings:
             raise ValueError("Settings must be provided")
+        if not factory:
+            raise ValueError("Factory must be provided")
             
         super().__init__()
         logger.info("[PersistentStore] Starting initialization")
         
         self.settings = settings
-        logger.info("[PersistentStore] Using FAISS_INDEX_PATH: %s", self.settings.faiss_index_path)
+        self.factory = factory
+        self.auto_save = auto_save
         
         # Set index path from settings
         self.index_path = self.settings.faiss_index_path
         self.store_dir = os.path.dirname(self.index_path)
-        logger.info("[PersistentStore] Derived store_dir: %s", self.store_dir)
-        
-        self.auto_save = auto_save
-        logger.info("[PersistentStore] Auto-save enabled: %s", self.auto_save)
+        logger.info("[PersistentStore] Using index path: %s", self.index_path)
         
         # Create directory if it doesn't exist and check permissions
         try:
@@ -61,26 +63,16 @@ class PersistentStore(VectorStore):
             logger.error("[PersistentStore] Failed to initialize store directory: %s", str(e))
             raise RuntimeError(f"Failed to initialize store directory: {e}")
         
-        # Validate store type if provided
-        if store is not None and not isinstance(store, VectorStore):
-            raise TypeError("store must be an instance of VectorStore")
-        
-        # Try to load existing index or use provided store
+        # Create store using factory
+        impl_type = self.settings.vector_store_impl_type
         if os.path.exists(self.index_path):
-            logger.info("[PersistentStore] Loading existing index from %s", self.index_path)
-            from ..factory import VectorStoreFactory
-            self.store = VectorStoreFactory.create(VectorStoreType.FAISS, settings)
-            self.store.load(self.index_path)
+            logger.info("[PersistentStore] Loading existing index")
+            store = self.factory.create(impl_type, self.settings)
+            store.load(path=self.index_path, settings=self.settings)
+            self.store = store
         else:
-            logger.info("[PersistentStore] Using provided store or creating new one")
-            if store is not None:
-                self.store = store
-            else:
-                from ..factory import VectorStoreFactory
-                self.store = VectorStoreFactory.create(VectorStoreType.FAISS, settings)
-                if self.auto_save:
-                    logger.info("[PersistentStore] Auto-saving new store to %s", self.index_path)
-                    self.store.save(self.index_path)
+            logger.info("[PersistentStore] Creating new store")
+            self.store = self.factory.create(impl_type, self.settings)
         
         logger.info("[PersistentStore] Initialization complete")
     
@@ -113,41 +105,35 @@ class PersistentStore(VectorStore):
         save_path = path or self.index_path
         self._save_with_backup(save_path)
     
-    @classmethod
-    def load(cls, path: Optional[str] = None, settings: Optional[Settings] = None) -> 'PersistentStore':
+    def load(self, path: str) -> None:
         """
         Load a store from disk.
         
+        This method allows loading an index from a specific path, overriding
+        the default path from settings. This is useful when you need to load
+        an index from a different location.
+        
         Args:
-            path: Optional override path (default: use path from settings)
-            settings: Settings instance (required)
-            
-        Returns:
-            New instance of PersistentStore
+            path: Path to load the index from
             
         Raises:
-            ValueError: If settings is not provided
+            ValueError: If path is not provided
             RuntimeError: If load operation fails
         """
-        if not settings:
-            raise ValueError("Settings must be provided")
-            
-        logger.info("[PersistentStore] Loading store")
-        
-        # If path not provided, use settings
         if not path:
-            path = settings.faiss_index_path
-            logger.info("[PersistentStore] Using path from settings: %s", path)
-        else:
-            logger.info("[PersistentStore] Using provided path: %s", path)
+            raise ValueError("Path must be provided")
             
-        # Create store and load index
-        from ..factory import VectorStoreFactory
-        store = VectorStoreFactory.create(VectorStoreType.FAISS, settings)
-        store.load(path)
+        logger.info("[PersistentStore] Loading store from path: %s", path)
         
-        # Create persistent store with loaded index
-        return cls(store=store, settings=settings)
+        # Load store directly using implementation type's load method
+        impl_type = self.settings.vector_store_impl_type
+        if impl_type == VectorStoreImplementationType.FAISS:
+            from .faiss import FAISSVectorStore
+            self.store = FAISSVectorStore.load(path=path, settings=self.settings)
+        else:
+            raise ValueError(f"Unsupported implementation type: {impl_type}")
+        
+        logger.info("[PersistentStore] Store loaded successfully")
     
     def _save_with_backup(self, path: Optional[str] = None) -> None:
         """

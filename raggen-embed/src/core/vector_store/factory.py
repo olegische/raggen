@@ -1,25 +1,34 @@
 """Factory for creating vector store instances."""
-from typing import Dict, Type
+from typing import Dict, Type, Union
 
 from .base import VectorStore
 from .implementations import FAISSVectorStore, PersistentStore
-from config.settings import Settings, VectorStoreType
+from config.settings import Settings, VectorStoreServiceType, VectorStoreImplementationType
 
 class VectorStoreFactory:
     """Factory for creating vector store instances."""
     
-    _implementations: Dict[str, Type[VectorStore]] = {
-        VectorStoreType.FAISS.value: FAISSVectorStore,
-        VectorStoreType.PERSISTENT.value: PersistentStore
+    # High-level service implementations
+    _service_implementations: Dict[str, Type[VectorStore]] = {
+        VectorStoreServiceType.PERSISTENT.value: PersistentStore
+    }
+    
+    # Low-level store implementations
+    _store_implementations: Dict[str, Type[VectorStore]] = {
+        VectorStoreImplementationType.FAISS.value: FAISSVectorStore
     }
     
     @classmethod
-    def create(cls, store_type: VectorStoreType, settings: Settings) -> VectorStore:
+    def create(
+        cls,
+        store_type: Union[VectorStoreServiceType, VectorStoreImplementationType],
+        settings: Settings
+    ) -> VectorStore:
         """
         Create a vector store instance.
         
         Args:
-            store_type: Type of vector store to create
+            store_type: Type of vector store to create (service or implementation type)
             settings: Settings instance
             
         Returns:
@@ -28,21 +37,33 @@ class VectorStoreFactory:
         Raises:
             ValueError: If store type is unknown
         """
-        # If string is provided, try to convert to enum or use as custom type
+        # Handle service-level types
+        if isinstance(store_type, VectorStoreServiceType):
+            if store_type == VectorStoreServiceType.PERSISTENT:
+                # For persistent store, pass factory instance
+                return cls._service_implementations[store_type.value](
+                    settings=settings,
+                    factory=cls()
+                )
+            return cls._service_implementations[store_type.value](settings)
+            
+        # Handle implementation-level types
+        if isinstance(store_type, VectorStoreImplementationType):
+            return cls._store_implementations[store_type.value](settings)
+            
+        # Handle string type
         if isinstance(store_type, str):
+            # Try service type first
             try:
-                store_type = VectorStoreType(store_type)
+                return cls.create(VectorStoreServiceType(store_type), settings)
             except ValueError:
-                # Not a standard type, check if it's a registered custom type
-                if store_type not in cls._implementations:
-                    raise ValueError(f"'{store_type}' is not a valid VectorStoreType")
-                return cls._implementations[store_type](settings)
-        elif not isinstance(store_type, VectorStoreType):
-            raise ValueError(f"Unknown store type: {store_type}")
+                # Try implementation type
+                try:
+                    return cls.create(VectorStoreImplementationType(store_type), settings)
+                except ValueError:
+                    raise ValueError(f"Unknown store type: {store_type}")
         
-        # Handle standard types
-        return cls._implementations[store_type.value](settings)
-        return implementation(settings)
+        raise ValueError(f"Unknown store type: {store_type}")
     
     @classmethod
     def register_implementation(cls, name: str, implementation: Type[VectorStore]) -> None:

@@ -4,6 +4,7 @@ from typing import Optional, Dict, Type
 from config.settings import Settings
 from core.embeddings import EmbeddingService
 from core.vector_store.service import VectorStoreService
+from core.vector_store.factory import VectorStoreFactory
 from core.text_splitting.factory import TextSplitStrategyFactory
 from core.text_splitting.base import TextSplitStrategy
 from core.document_processing import DocumentProcessingService
@@ -14,6 +15,7 @@ class ApplicationContainer:
     # Singleton instances
     _settings: Optional[Settings] = None
     _vector_store_service: Optional[VectorStoreService] = None
+    _vector_store_factory: Optional[VectorStoreFactory] = None
     _embedding_service: Optional[EmbeddingService] = None
     _text_split_factory: Optional[TextSplitStrategyFactory] = None
     _document_processing_service: Optional[DocumentProcessingService] = None
@@ -30,9 +32,17 @@ class ApplicationContainer:
             settings: Application settings
         """
         cls._settings = settings
-        cls._vector_store_service = VectorStoreService(settings)
+        cls._vector_store_factory = VectorStoreFactory()
+        cls._vector_store_service = VectorStoreService(settings, cls._vector_store_factory)
         cls._embedding_service = EmbeddingService()
         cls._text_split_factory = TextSplitStrategyFactory()
+    
+    @classmethod
+    def get_vector_store_factory(cls) -> VectorStoreFactory:
+        """Get vector store factory."""
+        if cls._vector_store_factory is None:
+            raise RuntimeError("Container not configured. Call configure() first.")
+        return cls._vector_store_factory
     
     @classmethod
     def get_settings(cls) -> Settings:
@@ -96,6 +106,7 @@ class ApplicationContainer:
         """Reset container state."""
         cls._settings = None
         cls._vector_store_service = None
+        cls._vector_store_factory = None
         cls._embedding_service = None
         cls._text_split_factory = None
         cls._document_processing_service = None

@@ -180,8 +180,8 @@ def test_persistence(vector_store, sample_vectors, test_settings):
         index_size = get_file_size(test_path)
         print(f"\nIndex size: {index_size:.1f} MB")
 
-        # Load index
-        loaded_store = FAISSVectorStore.load(test_path, settings=test_settings)
+        # Load index with required parameters
+        loaded_store = FAISSVectorStore.load(path=test_path, settings=test_settings)
         assert loaded_store.dimension == vector_store.dimension
         assert loaded_store.n_vectors == vector_store.n_vectors
         assert loaded_store.is_trained

@@ -6,53 +6,17 @@ import pytest
 from datetime import datetime
 import time
 import logging
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, Mock
 import threading
 import tempfile
 
 from core.vector_store.implementations import PersistentStore, FAISSVectorStore
 from core.vector_store.base import VectorStore
-from core.vector_store.factory import VectorStoreFactory, VectorStoreType
-from config.settings import Settings, reset_settings
+from core.vector_store.factory import VectorStoreFactory
+from core.vector_store.service import VectorStoreService
+from config.settings import Settings, reset_settings, VectorStoreServiceType, VectorStoreImplementationType
 
 logger = logging.getLogger(__name__)
-
-@pytest.fixture(scope="function")
-def test_settings():
-    """Create settings specifically for tests."""
-    reset_settings()
-    temp_dir = tempfile.mkdtemp()
-    temp_index_path = os.path.join(temp_dir, "index.faiss")
-    
-    os.environ.update({
-        "FAISS_INDEX_PATH": temp_index_path,
-        "VECTOR_DIM": "384",
-        "FAISS_INDEX_TYPE": "flat_l2"
-    })
-    
-    settings = Settings()
-    yield settings
-    
-    # Восстанавливаем права перед удалением
-    if os.path.exists(temp_dir):
-        os.chmod(temp_dir, stat.S_IRWXU)
-        shutil.rmtree(temp_dir, ignore_errors=True)
-    
-    reset_settings()
-    for key in ["FAISS_INDEX_PATH", "VECTOR_DIM", "FAISS_INDEX_TYPE"]:
-        if key in os.environ:
-            del os.environ[key]
-
-@pytest.fixture
-def mock_store():
-    """Create mock store for testing."""
-    store = MagicMock(spec=VectorStore)
-    store.add = MagicMock()
-    store.search = MagicMock(return_value=(np.array([]), np.array([])))
-    store.save = MagicMock()
-    store.load = MagicMock()
-    store.__len__ = MagicMock(return_value=0)
-    return store
 
 @pytest.fixture
 def test_vectors():
@@ -68,13 +32,15 @@ def test_initialization(test_settings):
     # Создаем директорию с правильными правами
     os.makedirs(store_dir, mode=0o755, exist_ok=True)
     
-    store = PersistentStore(settings=test_settings)
+    factory = VectorStoreFactory()
+    store = factory.create(VectorStoreServiceType.PERSISTENT, test_settings)
     assert os.path.exists(store_dir)
     assert os.path.exists(os.path.dirname(store.index_path))
     assert os.access(store_dir, os.W_OK)
     
     # Test with existing directory
-    store = PersistentStore(settings=test_settings)
+    factory = VectorStoreFactory()
+    store = factory.create(VectorStoreServiceType.PERSISTENT, test_settings)
     assert os.path.exists(store_dir)
     
     # Test with read-only directory
@@ -85,7 +51,8 @@ def test_initialization(test_settings):
 
 def test_file_operations(test_settings, test_vectors):
     """Test file system operations."""
-    store = PersistentStore(settings=test_settings)
+    factory = VectorStoreFactory()
+    store = factory.create(VectorStoreServiceType.PERSISTENT, test_settings)
     
     # Test file creation
     store.add(test_vectors)
@@ -104,7 +71,8 @@ def test_file_operations(test_settings, test_vectors):
 
 def test_backup_management(test_settings, test_vectors):
     """Test backup creation and management."""
-    store = PersistentStore(settings=test_settings)
+    factory = VectorStoreFactory()
+    store = factory.create(VectorStoreServiceType.PERSISTENT, test_settings)
     backup_dir = os.path.dirname(test_settings.faiss_index_path)
     
     # Create multiple backups
@@ -128,7 +96,8 @@ def test_backup_management(test_settings, test_vectors):
 
 def test_backup_recovery(test_settings, test_vectors):
     """Test backup recovery process."""
-    store = PersistentStore(settings=test_settings)
+    factory = VectorStoreFactory()
+    store = factory.create(VectorStoreServiceType.PERSISTENT, test_settings)
     store.add(test_vectors)
     
     # Create backup
@@ -145,18 +114,19 @@ def test_backup_recovery(test_settings, test_vectors):
     
     # Пробуем загрузить повреждённый файл
     with pytest.raises(RuntimeError):
-        store = PersistentStore(settings=test_settings)
+        store = factory.create(VectorStoreServiceType.PERSISTENT, test_settings)
     
     # Восстанавливаем из бэкапа вручную
     shutil.copy2(backup_path, original_path)
     
     # Проверяем восстановление
-    store = PersistentStore(settings=test_settings)
+    store = factory.create(VectorStoreServiceType.PERSISTENT, test_settings)
     assert os.path.getsize(original_path) == original_size
 
 def test_concurrent_operations(test_settings, test_vectors):
     """Test concurrent file operations."""
-    store = PersistentStore(settings=test_settings)
+    factory = VectorStoreFactory()
+    store = factory.create(VectorStoreServiceType.PERSISTENT, test_settings)
     n_threads = 5
     
     def add_vectors():
@@ -180,7 +150,8 @@ def test_concurrent_operations(test_settings, test_vectors):
 @pytest.mark.skipif(os.name == 'nt', reason="Disk space check not supported on Windows")
 def test_disk_space_handling(test_settings, test_vectors):
     """Test handling of disk space issues."""
-    store = PersistentStore(settings=test_settings)
+    factory = VectorStoreFactory()
+    store = factory.create(VectorStoreServiceType.PERSISTENT, test_settings)
     
     # Патчим os.statvfs для симуляции нехватки места
     mock_statvfs = MagicMock()
@@ -192,22 +163,30 @@ def test_disk_space_handling(test_settings, test_vectors):
             with pytest.raises(OSError):
                 store.add(test_vectors)
 
-def test_store_delegation(mock_store, test_settings, test_vectors):
+def test_store_delegation(mock_vector_store, mock_vector_store_factory, test_settings, test_vectors):
     """Test basic store delegation."""
-    store = PersistentStore(store=mock_store, settings=test_settings)
+    # Устанавливаем тип реализации в настройках
+    test_settings.vector_store_impl_type = VectorStoreImplementationType.FAISS
+    
+    # Create persistent store with mocked dependencies
+    store = PersistentStore(
+        settings=test_settings,
+        factory=mock_vector_store_factory,
+        auto_save=False  # Отключаем автосохранение для теста
+    )
     
     # Test add delegation
     store.add(test_vectors)
-    mock_store.add.assert_called_once()
+    mock_vector_store.add.assert_called_once()
     
     # Test search delegation
     query = np.random.randn(1, 384).astype(np.float32)
     store.search(query)
-    mock_store.search.assert_called_once()
+    mock_vector_store.search.assert_called_once()
     
     # Test len delegation
     len(store)
-    mock_store.__len__.assert_called_once()
+    mock_vector_store.__len__.assert_called_once()
 
 def test_error_handling(test_settings):
     """Test handling of file system errors."""
@@ -215,8 +194,9 @@ def test_error_handling(test_settings):
     invalid_dir = "/nonexistent/directory"
     test_settings.faiss_index_path = os.path.join(invalid_dir, "index.faiss")
     
+    factory = VectorStoreFactory()
     with pytest.raises((OSError, RuntimeError)):
-        store = PersistentStore(settings=test_settings)
+        store = factory.create(VectorStoreServiceType.PERSISTENT, test_settings)
     
     # Test with invalid permissions
     temp_dir = tempfile.mkdtemp()
@@ -225,35 +205,89 @@ def test_error_handling(test_settings):
     if os.name != 'nt':  # Skip on Windows
         os.chmod(temp_dir, 0)  # Remove all permissions
         with pytest.raises((OSError, RuntimeError)):
-            store = PersistentStore(settings=test_settings)
+            store = factory.create(VectorStoreServiceType.PERSISTENT, test_settings)
         os.chmod(temp_dir, stat.S_IRWXU)  # Restore permissions for cleanup
     
     # Cleanup
     shutil.rmtree(temp_dir)
 
 def test_auto_loading(test_settings, test_vectors):
-    """Test automatic index loading."""
-    # Create and save initial index
-    store1 = PersistentStore(settings=test_settings)
-    store1.add(test_vectors)
+    """Test automatic index loading through VectorStoreService."""
+    # Initialize service
+    factory = VectorStoreFactory()
+    vector_store_service = VectorStoreService(test_settings, factory)
+    
+    # Add vectors to store
+    store = vector_store_service.store
+    store.add(test_vectors)
+    
+    logger.info("Initial vectors added.")
     
     # Ensure file is saved
     assert os.path.exists(test_settings.faiss_index_path)
     assert os.path.getsize(test_settings.faiss_index_path) > 0
     
-    # Create new instance - should load existing index
-    store2 = PersistentStore(settings=test_settings)
+    logger.info("Files saved.")
+    
+    # Reset service to force reload
+    vector_store_service.reset()
+    reloaded_store = vector_store_service.store
     
     # Test search to verify data was loaded
     query = np.random.randn(1, 384).astype(np.float32)
-    distances1, indices1 = store1.search(query)
-    distances2, indices2 = store2.search(query)
+    distances1, indices1 = store.search(query)
+    logger.info("First search for data completed")
+    distances2, indices2 = reloaded_store.search(query)
+    logger.info("Second search for data completed")
     
     assert isinstance(distances1, np.ndarray)
     assert isinstance(distances2, np.ndarray)
     np.testing.assert_array_equal(indices1, indices2)
 
+def test_explicit_loading(test_settings, test_vectors):
+    """Test explicit index loading."""
+    factory = VectorStoreFactory()
+    
+    # Create and save initial index
+    store1 = factory.create(VectorStoreServiceType.PERSISTENT, test_settings)
+    store1.add(test_vectors)
+    
+    # Create new store and load index from different path
+    test_path = "test_index.faiss"
+    store1.save(test_path)
+    
+    try:
+        # Create new store and load index explicitly
+        store2 = factory.create(VectorStoreServiceType.PERSISTENT, test_settings)
+        store2.load(test_path)
+        
+        # Test search to verify data was loaded
+        query = np.random.randn(1, 384).astype(np.float32)
+        distances1, indices1 = store1.search(query)
+        logger.info("First search for data completed")
+        distances2, indices2 = store2.search(query)
+        logger.info("Second search for data completed")
+        
+        assert isinstance(distances1, np.ndarray)
+        assert isinstance(distances2, np.ndarray)
+        np.testing.assert_array_equal(indices1, indices2)
+    finally:
+        if os.path.exists(test_path):
+            os.remove(test_path)
+
+def test_load_errors(test_settings):
+    """Test error handling during load."""
+    factory = VectorStoreFactory()
+    store = factory.create(VectorStoreServiceType.PERSISTENT, test_settings)
+    
+    # Test with non-existent file
+    with pytest.raises(ValueError):
+        store.load("")  # Empty path
+        
+    with pytest.raises((OSError, RuntimeError)):
+        store.load("/nonexistent/path/index.faiss")
+
 def test_factory_creates_persistent_store(test_settings):
     """Test that factory creates PersistentStore correctly."""
-    store = VectorStoreFactory.create(VectorStoreType.PERSISTENT, test_settings)
+    store = VectorStoreFactory.create(VectorStoreServiceType.PERSISTENT, test_settings)
     assert isinstance(store, PersistentStore)

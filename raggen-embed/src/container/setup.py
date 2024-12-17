@@ -5,6 +5,7 @@ from fastapi import FastAPI, Depends
 
 from config.settings import Settings
 from core.vector_store.base import VectorStore
+from core.vector_store.factory import VectorStoreFactory
 from core.text_splitting.service import TextSplitterService
 from core.document_processing import DocumentProcessingService
 from .application import ApplicationContainer
@@ -29,6 +30,7 @@ def setup_di(app: FastAPI, settings: Settings) -> None:
     app.dependency_overrides.update({
         Settings: ApplicationContainer.get_settings,
         VectorStore: lambda: ApplicationContainer.get_vector_store_service().store,
+        VectorStoreFactory: ApplicationContainer.get_vector_store_factory,
         DocumentProcessingService: ApplicationContainer.get_document_processing_service,
     })
     

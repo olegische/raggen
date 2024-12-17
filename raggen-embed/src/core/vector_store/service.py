@@ -3,22 +3,24 @@ from typing import Optional, Dict, Any
 import logging
 
 from .base import VectorStore
-from .factory import VectorStoreFactory, VectorStoreType
-from config.settings import Settings
+from .factory import VectorStoreFactory
+from config.settings import Settings, VectorStoreServiceType
 
 logger = logging.getLogger(__name__)
 
 class VectorStoreService:
     """Service for managing vector store lifecycle and caching."""
     
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, factory: VectorStoreFactory):
         """
         Initialize vector store service.
         
         Args:
             settings: Settings instance
+            factory: Vector store factory instance
         """
         self.settings = settings
+        self.factory = factory
         self._store: Optional[VectorStore] = None
         
     @property
@@ -31,8 +33,8 @@ class VectorStoreService:
         """
         if self._store is None:
             logger.info("Creating new vector store instance")
-            store_type = VectorStoreType(self.settings.vector_store_type)
-            self._store = VectorStoreFactory.create(store_type, self.settings)
+            store_type = self.settings.vector_store_service_type
+            self._store = self.factory.create(store_type, self.settings)
             
         return self._store
     

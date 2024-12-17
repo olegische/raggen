@@ -21,10 +21,13 @@ class TextSplitStrategy(str, Enum):
     SLIDING_WINDOW = "sliding_window"
     PARAGRAPH = "paragraph"
 
-class VectorStoreType(str, Enum):
-    """Available vector store types."""
-    FAISS = "faiss"
-    PERSISTENT = "persistent"
+class VectorStoreServiceType(str, Enum):
+    """High-level vector store types for service layer."""
+    PERSISTENT = "persistent"  # FAISS with persistence
+
+class VectorStoreImplementationType(str, Enum):
+    """Low-level vector store implementations."""
+    FAISS = "faiss"  # Only FAISS for now, can add more implementations later
 
 class Settings(BaseSettings):
     """Application settings."""
@@ -156,9 +159,14 @@ class Settings(BaseSettings):
     )
     
     # Vector store settings
-    vector_store_type: VectorStoreType = Field(
-        default=VectorStoreType(os.getenv("VECTOR_STORE_TYPE", "faiss")),
-        description="Type of vector store to use (faiss or persistent)"
+    vector_store_service_type: VectorStoreServiceType = Field(
+        default=VectorStoreServiceType(os.getenv("VECTOR_STORE_TYPE", "persistent")),
+        description="High-level vector store type (faiss for direct FAISS usage or persistent for FAISS with persistence)"
+    )
+    
+    vector_store_impl_type: VectorStoreImplementationType = Field(
+        default=VectorStoreImplementationType.FAISS,
+        description="Low-level vector store implementation type"
     )
     
     # General search settings

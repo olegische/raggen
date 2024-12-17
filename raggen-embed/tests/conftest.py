@@ -8,7 +8,13 @@ from datetime import datetime
 import logging
 from unittest.mock import Mock
 
-from src.config.settings import Settings, reset_settings, TextSplitStrategy as StrategyType
+from src.config.settings import (
+    Settings,
+    reset_settings,
+    TextSplitStrategy as StrategyType,
+    VectorStoreServiceType,
+    VectorStoreImplementationType
+)
 from src.core.embeddings import EmbeddingService
 from src.core.text_splitting import (
     TextSplitStrategy,
@@ -16,6 +22,7 @@ from src.core.text_splitting import (
     ParagraphStrategy,
     TextSplitterService
 )
+from src.core.vector_store.base import VectorStore
 
 logger = logging.getLogger(__name__)
 
@@ -70,19 +77,25 @@ def test_settings():
         "TEXT_MIN_LENGTH": "10",
         "TEXT_MAX_LENGTH": "100",
         "TEXT_OVERLAP": "5",
-        # Добавляем настройку для vector store
-        "VECTOR_STORE_TYPE": "faiss"    # По умолчанию FAISS
+        # Добавляем настройки для vector store
+        "VECTOR_STORE_TYPE": "persistent",  # По умолчанию используем persistent store
+        "VECTOR_STORE_IMPL_TYPE": "faiss"   # В качестве реализации используем FAISS
     })
     
     # Create settings
     settings = Settings()
+    # Устанавливаем типы хранилищ
+    settings.vector_store_service_type = VectorStoreServiceType.PERSISTENT
+    settings.vector_store_impl_type = VectorStoreImplementationType.FAISS
     logger.info("[Test] Created settings with FAISS_INDEX_PATH: %s", settings.faiss_index_path)
     
     yield settings
     
     # Cleanup
     logger.info("[Test] Cleaning up temp directory: %s", temp_dir)
-    shutil.rmtree(temp_dir, ignore_errors=True)
+    if os.path.exists(temp_dir):
+        os.chmod(temp_dir, stat.S_IRWXU)  # Восстанавливаем права перед удалением
+        shutil.rmtree(temp_dir, ignore_errors=True)
     
     # Reset settings and environment
     logger.info("[Test] Resetting settings and environment variables")
@@ -91,8 +104,8 @@ def test_settings():
         "FAISS_INDEX_PATH", "VECTOR_DIM", "N_CLUSTERS", "N_PROBE",
         "PQ_M", "PQ_BITS", "HNSW_M", "HNSW_EF_CONSTRUCTION",
         "HNSW_EF_SEARCH", "N_RESULTS", "FAISS_INDEX_TYPE",
-        "TEXT_SPLIT_STRATEGY", "TEXT_MIN_LENGTH", "TEXT_MAX_LENGTH", "TEXT_OVERLAP",
-        "VECTOR_STORE_TYPE"
+        "TEXT_SPLIT_STRATEGY", "TEXT_MIN_LENGTH", "TEXT_MAX_LENGTH",
+        "TEXT_OVERLAP", "VECTOR_STORE_TYPE", "VECTOR_STORE_IMPL_TYPE"
     ]:
         if key in os.environ:
             del os.environ[key]
@@ -130,3 +143,22 @@ def text_splitter_service(mock_embedding_service, sliding_window_strategy, test_
         split_strategy=sliding_window_strategy,
         settings=test_settings
     )
+
+@pytest.fixture
+def mock_vector_store():
+    """Create a mock vector store."""
+    store = Mock(spec=VectorStore)
+    store.add = Mock()
+    store.search = Mock(return_value=(np.array([]), np.array([])))
+    store.save = Mock()
+    store.load = Mock()
+    store.__len__ = Mock(return_value=0)
+    return store
+
+@pytest.fixture
+def mock_vector_store_factory(mock_vector_store):
+    """Create a mock vector store factory."""
+    from src.core.vector_store.factory import VectorStoreFactory
+    factory = VectorStoreFactory()
+    factory._store_implementations[VectorStoreImplementationType.FAISS.value] = lambda _: mock_vector_store
+    return factory
