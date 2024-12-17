@@ -5,7 +5,6 @@ import warnings
 import numpy as np
 
 from ..base import VectorStore
-from ..factory import VectorStoreFactory
 from config.settings import Settings, VectorStoreType
 from utils.logging import get_logger
 
@@ -69,14 +68,19 @@ class PersistentStore(VectorStore):
         # Try to load existing index or use provided store
         if os.path.exists(self.index_path):
             logger.info("[PersistentStore] Loading existing index from %s", self.index_path)
+            from ..factory import VectorStoreFactory
             self.store = VectorStoreFactory.create(VectorStoreType.FAISS, settings)
             self.store.load(self.index_path)
         else:
             logger.info("[PersistentStore] Using provided store or creating new one")
-            self.store = store if store is not None else VectorStoreFactory.create(VectorStoreType.FAISS, settings)
-            if self.auto_save:
-                logger.info("[PersistentStore] Auto-saving new store to %s", self.index_path)
-                self.store.save(self.index_path)
+            if store is not None:
+                self.store = store
+            else:
+                from ..factory import VectorStoreFactory
+                self.store = VectorStoreFactory.create(VectorStoreType.FAISS, settings)
+                if self.auto_save:
+                    logger.info("[PersistentStore] Auto-saving new store to %s", self.index_path)
+                    self.store.save(self.index_path)
         
         logger.info("[PersistentStore] Initialization complete")
     
@@ -138,6 +142,7 @@ class PersistentStore(VectorStore):
             logger.info("[PersistentStore] Using provided path: %s", path)
             
         # Create store and load index
+        from ..factory import VectorStoreFactory
         store = VectorStoreFactory.create(VectorStoreType.FAISS, settings)
         store.load(path)
         
