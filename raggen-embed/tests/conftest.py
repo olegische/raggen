@@ -69,7 +69,9 @@ def test_settings():
         "TEXT_SPLIT_STRATEGY": "sliding_window",
         "TEXT_MIN_LENGTH": "10",
         "TEXT_MAX_LENGTH": "100",
-        "TEXT_OVERLAP": "5"
+        "TEXT_OVERLAP": "5",
+        # Добавляем настройку для vector store
+        "VECTOR_STORE_TYPE": "faiss"    # По умолчанию FAISS
     })
     
     # Create settings
@@ -89,7 +91,8 @@ def test_settings():
         "FAISS_INDEX_PATH", "VECTOR_DIM", "N_CLUSTERS", "N_PROBE",
         "PQ_M", "PQ_BITS", "HNSW_M", "HNSW_EF_CONSTRUCTION",
         "HNSW_EF_SEARCH", "N_RESULTS", "FAISS_INDEX_TYPE",
-        "TEXT_SPLIT_STRATEGY", "TEXT_MIN_LENGTH", "TEXT_MAX_LENGTH", "TEXT_OVERLAP"
+        "TEXT_SPLIT_STRATEGY", "TEXT_MIN_LENGTH", "TEXT_MAX_LENGTH", "TEXT_OVERLAP",
+        "VECTOR_STORE_TYPE"
     ]:
         if key in os.environ:
             del os.environ[key]

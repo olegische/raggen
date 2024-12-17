@@ -1,15 +1,9 @@
 """Factory for creating vector store instances."""
 from typing import Dict, Type
-from enum import Enum
 
 from .base import VectorStore
 from .implementations import FAISSVectorStore, PersistentStore
-from config.settings import Settings
-
-class VectorStoreType(Enum):
-    """Available vector store types."""
-    FAISS = "faiss"
-    PERSISTENT = "persistent"
+from config.settings import Settings, VectorStoreType
 
 class VectorStoreFactory:
     """Factory for creating vector store instances."""
@@ -34,10 +28,20 @@ class VectorStoreFactory:
         Raises:
             ValueError: If store type is unknown
         """
-        if not isinstance(store_type, VectorStoreType):
+        # If string is provided, try to convert to enum or use as custom type
+        if isinstance(store_type, str):
+            try:
+                store_type = VectorStoreType(store_type)
+            except ValueError:
+                # Not a standard type, check if it's a registered custom type
+                if store_type not in cls._implementations:
+                    raise ValueError(f"'{store_type}' is not a valid VectorStoreType")
+                return cls._implementations[store_type](settings)
+        elif not isinstance(store_type, VectorStoreType):
             raise ValueError(f"Unknown store type: {store_type}")
-            
-        implementation = cls._implementations[store_type.value]
+        
+        # Handle standard types
+        return cls._implementations[store_type.value](settings)
         return implementation(settings)
     
     @classmethod
