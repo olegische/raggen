@@ -57,15 +57,27 @@ class FAISSVectorStore(VectorStore):
             quantizer = faiss.IndexFlatL2(self.dimension)
             index = faiss.IndexIVFFlat(quantizer, self.dimension, self.settings.n_clusters)
             index.nprobe = self.settings.n_probe
+            # Set verbose=False for all components
+            if hasattr(index, 'verbose'):
+                index.verbose = False
+            if hasattr(index.quantizer, 'verbose'):
+                index.quantizer.verbose = False
             return index
             
         elif self.index_type == IndexType.IVF_PQ:
-            logger.info("Creating IVF_PQ index with %d clusters, M=%d, bits=%d", 
+            logger.info("Creating IVF_PQ index with %d clusters, M=%d, bits=%d",
                        self.settings.n_clusters, self.settings.pq_m, self.settings.pq_bits)
             quantizer = faiss.IndexFlatL2(self.dimension)
-            index = faiss.IndexIVFPQ(quantizer, self.dimension, self.settings.n_clusters, 
+            index = faiss.IndexIVFPQ(quantizer, self.dimension, self.settings.n_clusters,
                                    self.settings.pq_m, self.settings.pq_bits)
             index.nprobe = self.settings.n_probe
+            # Set verbose=False for all components
+            if hasattr(index, 'verbose'):
+                index.verbose = False
+            if hasattr(index.quantizer, 'verbose'):
+                index.quantizer.verbose = False
+            if hasattr(index, 'pq') and hasattr(index.pq, 'verbose'):
+                index.pq.verbose = False
             return index
             
         elif self.index_type == IndexType.HNSW_FLAT:
@@ -90,23 +102,48 @@ class FAISSVectorStore(VectorStore):
         if vectors.shape[1] != self.dimension:
             raise ValueError(f"Expected vectors of dimension {self.dimension}, got {vectors.shape[1]}")
         
-        # Сначала проверяем, нужна ли тренировка для этого типа индекса
+        logger.info("Training check for index type: %s", self.index_type)
+        logger.info("Current training state: %s", self.is_trained)
+        logger.info("Vector shape: %s", vectors.shape)
+        logger.info("Index total vectors: %d", self.index.ntotal)
+        logger.info("Index attributes: %s", dir(self.index))
+        
+        # Если индекс уже тренирован, выходим
+        if self.is_trained:
+            logger.info("Index is already trained, skipping training")
+            return
+            
+        # Проверяем, нужна ли тренировка для этого типа индекса
         requires_training = self.index_type in {IndexType.IVF_FLAT, IndexType.IVF_PQ}
+        logger.info("Index requires training: %s", requires_training)
+        
         if not requires_training:
-            logger.debug("Index type %s doesn't require explicit training", self.index_type)
+            logger.info("Index type %s doesn't require explicit training, marking as trained", self.index_type)
             self.is_trained = True
             return
             
-        # Если индекс уже тренирован, выходим
-        if self.is_trained:
-            logger.debug("Index is already trained")
-            return
-            
         # Тренируем индекс
-        logger.info("Training index of type %s", self.index_type)
+        logger.info("Starting training for index type %s", self.index_type)
+        # Set verbose=False for all components before training
+        if hasattr(self.index, 'verbose'):
+            self.index.verbose = False
+        if hasattr(self.index.quantizer, 'verbose'):
+            self.index.quantizer.verbose = False
+        if hasattr(self.index, 'pq') and hasattr(self.index.pq, 'verbose'):
+            self.index.pq.verbose = False
+        if hasattr(self.index, 'cp'):
+            self.index.cp.verbose = False
         self.index.train(vectors)
         self.is_trained = True
-        logger.info("Index is now trained and ready for use")
+        logger.info("Index training completed successfully")
+        
+        # Log index parameters after training
+        if hasattr(self.index, 'nprobe'):
+            logger.info("IVF nprobe: %d", self.index.nprobe)
+        if hasattr(self.index, 'pq'):
+            logger.info("PQ M: %d, bits: %d", self.index.pq.M, self.index.pq.nbits)
+        if hasattr(self.index, 'is_trained'):
+            logger.info("Index is_trained flag: %s", self.index.is_trained)
     
     def add(self, vectors: np.ndarray) -> None:
         """
@@ -245,20 +282,49 @@ class FAISSVectorStore(VectorStore):
             instance.index = faiss.read_index(path)
             instance.dimension = instance.index.d
             instance.n_vectors = instance.index.ntotal
-            instance.is_trained = True  # Loaded indices are always trained
+            # Log detailed index information
+            logger.info("Loading index from path: %s", path)
+            logger.info("Loaded index type: %s", type(instance.index).__name__)
+            logger.info("Index attributes: %s", dir(instance.index))
+            logger.info("Index dimension: %d", instance.index.d)
+            logger.info("Index total vectors: %d", instance.index.ntotal)
             
             # Determine index type from loaded index
             if isinstance(instance.index, faiss.IndexFlatL2):
                 instance.index_type = IndexType.FLAT_L2
+                logger.info("Detected FLAT_L2 index (exact search, no training needed)")
             elif isinstance(instance.index, faiss.IndexIVFFlat):
                 instance.index_type = IndexType.IVF_FLAT
+                logger.info("Detected IVF_FLAT index (approximate search with clustering)")
+                if hasattr(instance.index, 'nprobe'):
+                    logger.info("IVF nprobe: %d", instance.index.nprobe)
             elif isinstance(instance.index, faiss.IndexIVFPQ):
                 instance.index_type = IndexType.IVF_PQ
+                logger.info("Detected IVF_PQ index (compressed vectors with clustering)")
+                if hasattr(instance.index, 'pq'):
+                    logger.info("PQ M: %d, bits: %d", instance.index.pq.M, instance.index.pq.nbits)
             elif isinstance(instance.index, faiss.IndexHNSWFlat):
                 instance.index_type = IndexType.HNSW_FLAT
+                logger.info("Detected HNSW_FLAT index (graph-based search)")
+                if hasattr(instance.index, 'hnsw'):
+                    logger.info("HNSW M: %d, efConstruction: %d, efSearch: %d",
+                              instance.index.hnsw.M,
+                              instance.index.hnsw.efConstruction,
+                              instance.index.hnsw.efSearch)
             else:
-                logger.warning("Unknown index type loaded, using default")
+                logger.warning("Unknown index type loaded: %s, using default: %s",
+                             type(instance.index).__name__,
+                             instance.settings.faiss_index_type)
                 instance.index_type = instance.settings.faiss_index_type
+            
+            # Set training state based on index type
+            requires_training = instance.index_type in {IndexType.IVF_FLAT, IndexType.IVF_PQ}
+            if requires_training:
+                # Для индексов, требующих тренировки, проверяем состояние
+                instance.is_trained = getattr(instance.index, 'is_trained', False)
+            else:
+                # Индексы без тренировки всегда готовы к использованию
+                instance.is_trained = True
             
             load_time = time.time() - start_time
             logger.info("Index loaded successfully in %.2f seconds", load_time)

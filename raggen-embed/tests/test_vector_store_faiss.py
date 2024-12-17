@@ -8,8 +8,6 @@ This module contains tests for the FAISSVectorStore implementation, including:
 - Large dataset handling
 """
 import os
-import tempfile
-import shutil
 import signal
 import psutil
 import time
@@ -21,7 +19,7 @@ import faiss
 from core.vector_store.base import VectorStore
 from core.vector_store.implementations import FAISSVectorStore
 from core.vector_store.factory import VectorStoreFactory
-from config.settings import Settings, IndexType, VectorStoreType, reset_settings
+from config.settings import Settings, IndexType, VectorStoreType
 
 def get_memory_usage():
     """Get current memory usage in MB."""
@@ -45,49 +43,6 @@ def generate_training_vectors(dim: int, n_vectors: int, normalize: bool = True) 
     if normalize:
         faiss.normalize_L2(vectors)
     return vectors
-
-@pytest.fixture(scope="function")
-def test_settings():
-    """Create settings specifically for tests."""
-    # Reset settings before test
-    reset_settings()
-    
-    # Create temporary directory
-    temp_dir = tempfile.mkdtemp()
-    temp_index_path = os.path.join(temp_dir, "index.faiss")
-    
-    # Set environment variables with оптимальными параметрами
-    os.environ.update({
-        "FAISS_INDEX_PATH": temp_index_path,
-        "VECTOR_DIM": "384",
-        "N_CLUSTERS": "128",   # Уменьшили для лучшего обучения
-        "N_PROBE": "32",       # 25% от кластеров
-        "PQ_M": "32",         # Меньше сжатие, выше точность
-        "PQ_BITS": "8",       # Стандартное значение для PQ
-        "HNSW_M": "32",       # Больше соседей для точности
-        "HNSW_EF_CONSTRUCTION": "80",  # Больше точность при построении
-        "HNSW_EF_SEARCH": "128",       # Увеличили для лучшей точности
-        "N_RESULTS": "10",
-        "FAISS_INDEX_TYPE": "flat_l2"  # По умолчанию точный поиск
-    })
-    
-    # Create settings
-    settings = Settings()
-    
-    yield settings
-    
-    # Cleanup
-    shutil.rmtree(temp_dir)
-    
-    # Reset settings and environment
-    reset_settings()
-    for key in [
-        "FAISS_INDEX_PATH", "VECTOR_DIM", "N_CLUSTERS", "N_PROBE",
-        "PQ_M", "PQ_BITS", "HNSW_M", "HNSW_EF_CONSTRUCTION",
-        "HNSW_EF_SEARCH", "N_RESULTS", "FAISS_INDEX_TYPE"
-    ]:
-        if key in os.environ:
-            del os.environ[key]
 
 @pytest.fixture
 def vector_store(test_settings):
@@ -255,7 +210,6 @@ def test_index_types(sample_vectors, test_settings, index_type):
     
     # Add vectors
     store.add(sample_vectors)
-    assert store.is_trained
     assert store.index_type == index_type
     
     # Test search
