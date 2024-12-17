@@ -1,5 +1,5 @@
 """Factory for creating vector store instances."""
-from typing import Dict, Type, Union
+from typing import Dict, Type, Union, Optional
 
 from .base import VectorStore
 from .implementations import FAISSVectorStore, PersistentStore
@@ -22,7 +22,8 @@ class VectorStoreFactory:
     def create(
         cls,
         store_type: Union[VectorStoreServiceType, VectorStoreImplementationType],
-        settings: Settings
+        settings: Settings,
+        base_store: Optional[VectorStore] = None
     ) -> VectorStore:
         """
         Create a vector store instance.
@@ -40,10 +41,11 @@ class VectorStoreFactory:
         # Handle service-level types
         if isinstance(store_type, VectorStoreServiceType):
             if store_type == VectorStoreServiceType.PERSISTENT:
-                # For persistent store, pass factory instance
+                # For persistent store, pass factory instance and base store
                 return cls._service_implementations[store_type.value](
                     settings=settings,
-                    factory=cls()
+                    factory=cls(),
+                    store=base_store or cls.create(settings.vector_store_impl_type, settings)
                 )
             return cls._service_implementations[store_type.value](settings)
             

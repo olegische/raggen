@@ -1,10 +1,12 @@
 """Application-level dependency container."""
-from typing import Optional, Dict, Type
+from typing import Optional, Dict, Type, Union
+from core.vector_store.base import VectorStore
 
 from config.settings import Settings
 from core.embeddings import EmbeddingService
 from core.vector_store.service import VectorStoreService
 from core.vector_store.factory import VectorStoreFactory
+from core.vector_store.implementations import FAISSVectorStore
 from core.text_splitting.factory import TextSplitStrategyFactory
 from core.text_splitting.base import TextSplitStrategy
 from core.document_processing import DocumentProcessingService
@@ -16,6 +18,7 @@ class ApplicationContainer:
     _settings: Optional[Settings] = None
     _vector_store_service: Optional[VectorStoreService] = None
     _vector_store_factory: Optional[VectorStoreFactory] = None
+    _faiss_store: Optional[VectorStore] = None
     _embedding_service: Optional[EmbeddingService] = None
     _text_split_factory: Optional[TextSplitStrategyFactory] = None
     _document_processing_service: Optional[DocumentProcessingService] = None
@@ -33,7 +36,17 @@ class ApplicationContainer:
         """
         cls._settings = settings
         cls._vector_store_factory = VectorStoreFactory()
-        cls._vector_store_service = VectorStoreService(settings, cls._vector_store_factory)
+        
+        # Create base FAISS store
+        cls._faiss_store = FAISSVectorStore(settings)
+        
+        # Create vector store service with base store
+        cls._vector_store_service = VectorStoreService(
+            settings=settings,
+            factory=cls._vector_store_factory,
+            base_store=cls._faiss_store
+        )
+        
         cls._embedding_service = EmbeddingService()
         cls._text_split_factory = TextSplitStrategyFactory()
     
@@ -52,10 +65,32 @@ class ApplicationContainer:
         return cls._settings
     
     @classmethod
+    def get_faiss_store(cls) -> VectorStore:
+        """Get FAISS vector store singleton."""
+        if cls._faiss_store is None:
+            if cls._settings is None:
+                raise RuntimeError("Container not configured. Call configure() first.")
+            from .implementations import FAISSVectorStore
+            cls._faiss_store = FAISSVectorStore(cls._settings)
+        return cls._faiss_store
+    
+    @classmethod
     def get_vector_store_service(cls) -> VectorStoreService:
         """Get vector store service."""
         if cls._vector_store_service is None:
-            raise RuntimeError("Container not configured. Call configure() first.")
+            if cls._settings is None:
+                raise RuntimeError("Container not configured. Call configure() first.")
+            
+            # Get or create base FAISS store
+            base_store = cls.get_faiss_store()
+            
+            # Create service with base store
+            factory = cls.get_vector_store_factory()
+            cls._vector_store_service = VectorStoreService(
+                settings=cls._settings,
+                factory=factory,
+                base_store=base_store
+            )
         return cls._vector_store_service
     
     @classmethod
@@ -107,6 +142,7 @@ class ApplicationContainer:
         cls._settings = None
         cls._vector_store_service = None
         cls._vector_store_factory = None
+        cls._faiss_store = None
         cls._embedding_service = None
         cls._text_split_factory = None
         cls._document_processing_service = None

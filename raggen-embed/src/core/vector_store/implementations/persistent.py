@@ -20,6 +20,7 @@ class PersistentStore(VectorStore):
         self,
         settings: Settings,
         factory: 'VectorStoreFactory',
+        store: Optional[VectorStore] = None,
         auto_save: bool = True,
     ):
         """
@@ -28,6 +29,7 @@ class PersistentStore(VectorStore):
         Args:
             settings: Settings instance (required)
             factory: Vector store factory instance (required)
+            store: Base vector store instance (optional)
             auto_save: Whether to automatically save after modifications
             
         Raises:
@@ -45,6 +47,7 @@ class PersistentStore(VectorStore):
         self.settings = settings
         self.factory = factory
         self.auto_save = auto_save
+        self.store = store
         
         # Set index path from settings
         self.index_path = self.settings.faiss_index_path
@@ -63,16 +66,17 @@ class PersistentStore(VectorStore):
             logger.error("[PersistentStore] Failed to initialize store directory: %s", str(e))
             raise RuntimeError(f"Failed to initialize store directory: {e}")
         
-        # Create store using factory
-        impl_type = self.settings.vector_store_impl_type
-        if os.path.exists(self.index_path):
-            logger.info("[PersistentStore] Loading existing index")
-            store = self.factory.create(impl_type, self.settings)
-            store.load(path=self.index_path, settings=self.settings)
-            self.store = store
-        else:
-            logger.info("[PersistentStore] Creating new store")
-            self.store = self.factory.create(impl_type, self.settings)
+        # Use provided store or create new one using factory
+        if self.store is None:
+            impl_type = self.settings.vector_store_impl_type
+            if os.path.exists(self.index_path):
+                logger.info("[PersistentStore] Loading existing index")
+                store = self.factory.create(impl_type, self.settings)
+                store.load(path=self.index_path, settings=self.settings)
+                self.store = store
+            else:
+                logger.info("[PersistentStore] Creating new store")
+                self.store = self.factory.create(impl_type, self.settings)
         
         logger.info("[PersistentStore] Initialization complete")
     
