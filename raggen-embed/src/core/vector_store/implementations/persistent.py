@@ -141,16 +141,13 @@ class PersistentStore(VectorStore):
             
         logger.info("[PersistentStore] Loading store from path: %s", path)
         
-        # Load store directly using implementation type's load method
+        # Load store using implementation type's class method
         impl_type = self.settings.vector_store_impl_type
         if impl_type == VectorStoreImplementationType.FAISS:
             from .faiss import FAISSVectorStore
-            if isinstance(self.store, FAISSVectorStore):
-                logger.info("[PersistentStore] Loading index into existing store (id: %s)", hex(id(self.store)))
-                self.store.load(path=path, settings=self.settings)
-            else:
-                logger.info("[PersistentStore] Creating new store to load index")
-                self.store = FAISSVectorStore.load(path=path, settings=self.settings)
+            logger.info("[PersistentStore] Loading index from path: %s", path)
+            loaded_store = FAISSVectorStore.load(path=path, settings=self.settings)
+            self.store = loaded_store
         else:
             raise ValueError(f"Unsupported implementation type: {impl_type}")
         
