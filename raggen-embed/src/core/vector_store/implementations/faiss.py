@@ -1,3 +1,4 @@
+"""FAISS vector store implementation."""
 import os
 from typing import Optional, Tuple
 import time
@@ -5,7 +6,7 @@ import time
 import numpy as np
 import faiss
 
-from .base import VectorStore
+from ..base import VectorStore
 from config.settings import Settings, IndexType
 from utils.logging import get_logger
 

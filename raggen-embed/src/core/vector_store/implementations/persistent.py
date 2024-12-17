@@ -4,8 +4,7 @@ from datetime import datetime
 import warnings
 import numpy as np
 
-from .base import VectorStore
-from .vector_store_factory import VectorStoreFactory, VectorStoreType
+from ..base import VectorStore
 from config.settings import Settings
 from utils.logging import get_logger
 
