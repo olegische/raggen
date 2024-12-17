@@ -4,34 +4,46 @@ import pytest
 import numpy as np
 import logging
 
-from core.vector_store.implementations import FAISSVectorStore, PersistentStore
+from core.vector_store.implementations.faiss import FAISSVectorStore
+from core.vector_store.implementations.persistent import PersistentStore
 from core.vector_store.service import VectorStoreService
 from tests.di.conftest import MockApplicationContainer
+
 
 logger = logging.getLogger(__name__)
 
 def test_persistent_store_with_injected_store(app_container):
     """Test PersistentStore with injected FAISS store."""
-    # Get store and service
+    # Get dependencies from container
+    settings = app_container.get_settings()
     base_store = app_container.get_faiss_store()
-    service = app_container.get_vector_store_service()
+    factory = app_container.get_vector_store_factory()
     
-    # Verify base store is injected
-    assert isinstance(service._base_store, FAISSVectorStore)
-    assert service._base_store is base_store
+    # Create persistent store with injected base store
+    store = PersistentStore(
+        settings=settings,
+        factory=factory,
+        store=base_store
+    )
+    
+    # Verify we got a PersistentStore with injected FAISS store
+    assert isinstance(store, PersistentStore), "Should be a PersistentStore"
+    assert isinstance(store.store, FAISSVectorStore), "Base store should be FAISSVectorStore"
+    assert store.store is base_store, "Base store should be the one from container"
 
-def test_persistent_store_saves_injected_store(app_container, di_vector_store_factory, sample_vectors):
+def test_persistent_store_saves_injected_store(app_container, sample_vectors):
     """Test that PersistentStore correctly saves and loads injected store."""
     settings = app_container.get_settings()
     logger.info("Index path: %s", settings.faiss_index_path)
     
-    # Get base store from container
+    # Get dependencies from container
     base_store = app_container.get_faiss_store()
+    factory = app_container.get_vector_store_factory()
     
     # Create persistent store with injected base store
     persistent = PersistentStore(
         settings=settings,
-        factory=di_vector_store_factory,
+        factory=factory,
         store=base_store,
         auto_save=False  # Disable auto-save to control when we save
     )
@@ -46,18 +58,19 @@ def test_persistent_store_saves_injected_store(app_container, di_vector_store_fa
     assert os.path.exists(settings.faiss_index_path), "Index file not created"
     
     # Reset container
-    MockApplicationContainer.reset()
+    app_container.reset()
     
     # Configure new container with same settings
-    MockApplicationContainer.configure(settings)
+    app_container.configure(settings)
     
-    # Get new base store from container
+    # Get new dependencies from container
     new_base_store = app_container.get_faiss_store()
+    factory = app_container.get_vector_store_factory()
     
     # Create new persistent store with new base store
     new_persistent = PersistentStore(
         settings=settings,
-        factory=di_vector_store_factory,
+        factory=factory,
         store=new_base_store
     )
     
@@ -72,33 +85,37 @@ def test_persistent_store_saves_injected_store(app_container, di_vector_store_fa
     np.testing.assert_array_equal(original_results[0], new_results[0])  # distances
     np.testing.assert_array_equal(original_results[1], new_results[1])  # indices
 
-def test_persistent_store_auto_creates_store(di_settings, di_vector_store_factory):
+def test_persistent_store_auto_creates_store(app_container):
     """Test that PersistentStore creates base store if none injected."""
+    settings = app_container.get_settings()
+    factory = app_container.get_vector_store_factory()
+    
     persistent = PersistentStore(
-        settings=di_settings,
-        factory=di_vector_store_factory
+        settings=settings,
+        factory=factory
     )
     
     # Should create FAISS store
     assert isinstance(persistent.store, FAISSVectorStore)
     
     # Should be functional
-    vectors = np.random.randn(10, di_settings.vector_dim).astype(np.float32)
+    vectors = np.random.randn(10, settings.vector_dim).astype(np.float32)
     persistent.add(vectors)
     assert len(persistent) == 10
 
-def test_persistent_store_with_existing_index(app_container, di_vector_store_factory, sample_vectors):
+def test_persistent_store_with_existing_index(app_container, sample_vectors):
     """Test PersistentStore with existing index."""
     settings = app_container.get_settings()
     logger.info("Index path: %s", settings.faiss_index_path)
     
-    # Get base store from container
+    # Get dependencies from container
     base_store = app_container.get_faiss_store()
+    factory = app_container.get_vector_store_factory()
     
     # Create first persistent store with base store
     persistent = PersistentStore(
         settings=settings,
-        factory=di_vector_store_factory,
+        factory=factory,
         store=base_store,
         auto_save=False  # Disable auto-save to control when we save
     )
@@ -110,13 +127,14 @@ def test_persistent_store_with_existing_index(app_container, di_vector_store_fac
     # Verify file exists
     assert os.path.exists(settings.faiss_index_path), "Index file not created"
     
-    # Get new base store from container
+    # Get new dependencies from container
     new_base_store = app_container.get_faiss_store()
+    factory = app_container.get_vector_store_factory()
     
     # Create second persistent store with new base store
     new_persistent = PersistentStore(
         settings=settings,
-        factory=di_vector_store_factory,
+        factory=factory,
         store=new_base_store
     )
     
