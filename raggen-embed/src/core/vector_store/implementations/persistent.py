@@ -5,7 +5,8 @@ import warnings
 import numpy as np
 
 from ..base import VectorStore
-from config.settings import Settings
+from ..factory import VectorStoreFactory
+from config.settings import Settings, VectorStoreType
 from utils.logging import get_logger
 
 logger = get_logger(__name__)

@@ -21,6 +21,11 @@ class TextSplitStrategy(str, Enum):
     SLIDING_WINDOW = "sliding_window"
     PARAGRAPH = "paragraph"
 
+class VectorStoreType(str, Enum):
+    """Available vector store types."""
+    FAISS = "faiss"
+    PERSISTENT = "persistent"
+
 class Settings(BaseSettings):
     """Application settings."""
     
@@ -148,6 +153,12 @@ class Settings(BaseSettings):
     hnsw_ef_search: int = Field(
         default=int(os.getenv("HNSW_EF_SEARCH", "16")),
         description="Exploration factor during HNSW search (used by hnsw_flat)"
+    )
+    
+    # Vector store settings
+    vector_store_type: VectorStoreType = Field(
+        default=VectorStoreType(os.getenv("VECTOR_STORE_TYPE", "faiss")),
+        description="Type of vector store to use (faiss or persistent)"
     )
     
     # General search settings
