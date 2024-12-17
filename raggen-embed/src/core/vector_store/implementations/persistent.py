@@ -7,6 +7,7 @@ import numpy as np
 from ..base import VectorStore
 from config.settings import Settings, VectorStoreImplementationType
 from utils.logging import get_logger
+from .faiss import FAISSVectorStore
 
 if TYPE_CHECKING:
     from ..factory import VectorStoreFactory
@@ -66,17 +67,28 @@ class PersistentStore(VectorStore):
             logger.error("[PersistentStore] Failed to initialize store directory: %s", str(e))
             raise RuntimeError(f"Failed to initialize store directory: {e}")
         
-        # Use provided store or create new one using factory
+        # Initialize store if not provided
+        impl_type = self.settings.vector_store_impl_type
         if self.store is None:
-            impl_type = self.settings.vector_store_impl_type
-            if os.path.exists(self.index_path):
-                logger.info("[PersistentStore] Loading existing index")
-                store = self.factory.create(impl_type, self.settings)
-                store.load(path=self.index_path, settings=self.settings)
-                self.store = store
+            logger.info("[PersistentStore] Creating new store")
+            self.store = self.factory.create(impl_type, self.settings)
+        logger.info("[PersistentStore] Using store (id: %s)", hex(id(self.store)))
+        
+        # Load existing index if available
+        if os.path.exists(self.index_path):
+            logger.info("[PersistentStore] Found existing index at: %s", self.index_path)
+            if impl_type == VectorStoreImplementationType.FAISS:
+                if isinstance(self.store, FAISSVectorStore):
+                    logger.info("[PersistentStore] Loading index into store (id: %s)", hex(id(self.store)))
+                    loaded_store = FAISSVectorStore.load(path=self.index_path, settings=self.settings)
+                    self.store = loaded_store
+                    logger.info("[PersistentStore] Index loaded, store length: %d", len(self.store))
+                else:
+                    logger.warning("[PersistentStore] Store type mismatch, expected FAISSVectorStore but got %s", type(self.store).__name__)
             else:
-                logger.info("[PersistentStore] Creating new store")
-                self.store = self.factory.create(impl_type, self.settings)
+                logger.warning("[PersistentStore] Unsupported implementation type: %s", impl_type)
+        else:
+            logger.info("[PersistentStore] No existing index found at: %s", self.index_path)
         
         logger.info("[PersistentStore] Initialization complete")
     
@@ -133,11 +145,16 @@ class PersistentStore(VectorStore):
         impl_type = self.settings.vector_store_impl_type
         if impl_type == VectorStoreImplementationType.FAISS:
             from .faiss import FAISSVectorStore
-            self.store = FAISSVectorStore.load(path=path, settings=self.settings)
+            if isinstance(self.store, FAISSVectorStore):
+                logger.info("[PersistentStore] Loading index into existing store (id: %s)", hex(id(self.store)))
+                self.store.load(path=path, settings=self.settings)
+            else:
+                logger.info("[PersistentStore] Creating new store to load index")
+                self.store = FAISSVectorStore.load(path=path, settings=self.settings)
         else:
             raise ValueError(f"Unsupported implementation type: {impl_type}")
         
-        logger.info("[PersistentStore] Store loaded successfully")
+        logger.info("[PersistentStore] Store loaded successfully, length: %d", len(self.store))
     
     def _save_with_backup(self, path: Optional[str] = None) -> None:
         """

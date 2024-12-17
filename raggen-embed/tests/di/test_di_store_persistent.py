@@ -34,11 +34,16 @@ def test_persistent_store_with_injected_store(app_container):
 def test_persistent_store_saves_injected_store(app_container, sample_vectors):
     """Test that PersistentStore correctly saves and loads injected store."""
     settings = app_container.get_settings()
-    logger.info("Index path: %s", settings.faiss_index_path)
+    logger.info("Test starting with settings:")
+    logger.info("  Index path: %s", settings.faiss_index_path)
+    logger.info("  Sample vectors shape: %s", sample_vectors.shape)
     
     # Get dependencies from container
     base_store = app_container.get_faiss_store()
     factory = app_container.get_vector_store_factory()
+    logger.info("Initial base store (id: %s):", hex(id(base_store)))
+    logger.info("  Type: %s", type(base_store).__name__)
+    logger.info("  Length: %d", len(base_store))
     
     # Create persistent store with injected base store
     persistent = PersistentStore(
@@ -47,25 +52,39 @@ def test_persistent_store_saves_injected_store(app_container, sample_vectors):
         store=base_store,
         auto_save=False  # Disable auto-save to control when we save
     )
+    logger.info("Created persistent store (id: %s):", hex(id(persistent)))
+    logger.info("  Using base store (id: %s)", hex(id(persistent.store)))
+    logger.info("  Initial length: %d", len(persistent))
     
     # Add vectors through persistent store
     persistent.add(sample_vectors)
+    logger.info("Added vectors to persistent store (id: %s):", hex(id(persistent)))
+    logger.info("  Persistent store length: %d", len(persistent))
+    logger.info("  Base store (id: %s) length: %d", hex(id(base_store)), len(base_store))
     
     # Explicitly save
     persistent.save()
+    logger.info("Saved persistent store (id: %s)", hex(id(persistent)))
     
     # Verify file exists
-    assert os.path.exists(settings.faiss_index_path), "Index file not created"
+    file_exists = os.path.exists(settings.faiss_index_path)
+    logger.info("Index file exists: %s", file_exists)
+    assert file_exists, "Index file not created"
     
     # Reset container
     app_container.reset()
+    logger.info("Reset container")
     
     # Configure new container with same settings
     app_container.configure(settings)
+    logger.info("Configured new container with same settings")
     
     # Get new dependencies from container
     new_base_store = app_container.get_faiss_store()
     factory = app_container.get_vector_store_factory()
+    logger.info("New base store (id: %s):", hex(id(new_base_store)))
+    logger.info("  Type: %s", type(new_base_store).__name__)
+    logger.info("  Length: %d", len(new_base_store))
     
     # Create new persistent store with new base store
     new_persistent = PersistentStore(
@@ -73,6 +92,9 @@ def test_persistent_store_saves_injected_store(app_container, sample_vectors):
         factory=factory,
         store=new_base_store
     )
+    logger.info("Created new persistent store (id: %s):", hex(id(new_persistent)))
+    logger.info("  Using base store (id: %s)", hex(id(new_persistent.store)))
+    logger.info("  Initial length: %d", len(new_persistent))
     
     # Verify data is loaded
     assert len(new_persistent) == len(sample_vectors), "Vectors not loaded from file"

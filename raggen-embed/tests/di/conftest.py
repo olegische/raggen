@@ -12,7 +12,7 @@ from config.settings import (
     VectorStoreServiceType,
     VectorStoreImplementationType
 )
-from core.vector_store.implementations import FAISSVectorStore
+from core.vector_store.implementations.faiss import FAISSVectorStore
 from core.vector_store.service import VectorStoreService
 from core.vector_store.factory import VectorStoreFactory
 
@@ -45,6 +45,10 @@ class MockApplicationContainer:
     @classmethod
     def get_vector_store_service(cls):
         return cls._vector_store_service
+    
+    @classmethod
+    def get_vector_store_factory(cls):
+        return cls._vector_store_factory
     
     @classmethod
     def reset(cls):
@@ -98,25 +102,6 @@ def app_container(di_settings):
     yield MockApplicationContainer
     # Reset after test
     MockApplicationContainer.reset()
-
-@pytest.fixture
-def di_faiss_store(di_settings):
-    """Create FAISS store for DI tests."""
-    return FAISSVectorStore(settings=di_settings)
-
-@pytest.fixture
-def di_vector_store_factory():
-    """Create vector store factory for DI tests."""
-    return VectorStoreFactory()
-
-@pytest.fixture
-def di_vector_store_service(di_settings, di_vector_store_factory, di_faiss_store):
-    """Create vector store service with injected FAISS store."""
-    return VectorStoreService(
-        settings=di_settings,
-        factory=di_vector_store_factory,
-        base_store=di_faiss_store
-    )
 
 @pytest.fixture
 def sample_vectors():

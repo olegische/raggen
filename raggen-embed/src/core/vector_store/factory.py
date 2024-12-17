@@ -42,26 +42,36 @@ class VectorStoreFactory:
         if isinstance(store_type, VectorStoreServiceType):
             if store_type == VectorStoreServiceType.PERSISTENT:
                 # For persistent store, pass factory instance and base store
+                if isinstance(cls, type):
+                    # If called as class method, create new instance
+                    factory = cls()
+                else:
+                    # If called on instance, use self
+                    factory = cls
+                    
                 return cls._service_implementations[store_type.value](
                     settings=settings,
-                    factory=cls(),
+                    factory=factory,
                     store=base_store or cls.create(settings.vector_store_impl_type, settings)
                 )
             return cls._service_implementations[store_type.value](settings)
             
         # Handle implementation-level types
         if isinstance(store_type, VectorStoreImplementationType):
+            # If base_store is provided and matches the requested type, use it
+            if base_store and isinstance(base_store, cls._store_implementations[store_type.value]):
+                return base_store
             return cls._store_implementations[store_type.value](settings)
             
         # Handle string type
         if isinstance(store_type, str):
             # Try service type first
             try:
-                return cls.create(VectorStoreServiceType(store_type), settings)
+                return cls.create(VectorStoreServiceType(store_type), settings, base_store=base_store)
             except ValueError:
                 # Try implementation type
                 try:
-                    return cls.create(VectorStoreImplementationType(store_type), settings)
+                    return cls.create(VectorStoreImplementationType(store_type), settings, base_store=base_store)
                 except ValueError:
                     raise ValueError(f"Unknown store type: {store_type}")
         
