@@ -15,9 +15,10 @@ from config.settings import Settings
 def mock_model():
     """Fixture for mock embedding model."""
     model = MagicMock(spec=EmbeddingModel)
-    # Setup encode to return valid embeddings
+    # Setup encode to return fixed embeddings for deterministic tests
     def mock_encode(texts, convert_to_numpy=True):
-        return np.random.randn(len(texts), 384).astype(np.float32)
+        # Return fixed embeddings with correct dimension
+        return np.ones((len(texts), 384), dtype=np.float32)
     model.encode.side_effect = mock_encode
     return model
 
@@ -40,7 +41,8 @@ def service(mock_model, mock_cache):
 def test_get_embedding(service, mock_model, mock_cache):
     """Test single text embedding with cache."""
     text = "test text"
-    expected_embedding = np.array([1.0, 2.0, 3.0])
+    # Use fixed embedding with correct dimension
+    expected_embedding = np.ones(384, dtype=np.float32)
     
     # Setup cache miss then hit
     mock_cache.get.side_effect = [KeyError, expected_embedding]
@@ -61,7 +63,8 @@ def test_get_embedding(service, mock_model, mock_cache):
 def test_get_embeddings(service, mock_model):
     """Test batch text embedding."""
     texts = ["first text", "second text"]
-    expected_embeddings = np.random.randn(2, 384).astype(np.float32)
+    # Use fixed embeddings for deterministic test
+    expected_embeddings = np.ones((2, 384), dtype=np.float32)
     mock_model.encode.return_value = expected_embeddings
     
     embeddings = service.get_embeddings(texts)
