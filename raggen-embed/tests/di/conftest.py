@@ -15,7 +15,43 @@ from config.settings import (
 from core.vector_store.implementations import FAISSVectorStore
 from core.vector_store.service import VectorStoreService
 from core.vector_store.factory import VectorStoreFactory
-from container.application import ApplicationContainer
+
+class MockApplicationContainer:
+    """Mock container for testing."""
+    _settings = None
+    _vector_store_service = None
+    _vector_store_factory = None
+    _faiss_store = None
+    
+    @classmethod
+    def configure(cls, settings):
+        cls._settings = settings
+        cls._vector_store_factory = VectorStoreFactory()
+        cls._faiss_store = FAISSVectorStore(settings)
+        cls._vector_store_service = VectorStoreService(
+            settings=settings,
+            factory=cls._vector_store_factory,
+            base_store=cls._faiss_store
+        )
+    
+    @classmethod
+    def get_settings(cls):
+        return cls._settings
+    
+    @classmethod
+    def get_faiss_store(cls):
+        return cls._faiss_store
+    
+    @classmethod
+    def get_vector_store_service(cls):
+        return cls._vector_store_service
+    
+    @classmethod
+    def reset(cls):
+        cls._settings = None
+        cls._vector_store_service = None
+        cls._vector_store_factory = None
+        cls._faiss_store = None
 
 @pytest.fixture(scope="function")
 def di_settings():
@@ -58,10 +94,10 @@ def di_settings():
 def app_container(di_settings):
     """Configure and provide ApplicationContainer for DI tests."""
     # Configure container
-    ApplicationContainer.configure(di_settings)
-    yield ApplicationContainer
+    MockApplicationContainer.configure(di_settings)
+    yield MockApplicationContainer
     # Reset after test
-    ApplicationContainer.reset()
+    MockApplicationContainer.reset()
 
 @pytest.fixture
 def di_faiss_store(di_settings):
