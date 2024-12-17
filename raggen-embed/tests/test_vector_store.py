@@ -10,7 +10,8 @@ import pytest
 import faiss
 
 from core.vector_store.base import VectorStore
-from core.vector_store.faiss_store import FAISSVectorStore
+from core.vector_store.implementations import FAISSVectorStore
+from core.vector_store.factory import VectorStoreFactory, VectorStoreType
 from config.settings import Settings, IndexType, reset_settings
 
 def get_memory_usage():
@@ -451,3 +452,58 @@ def test_large_dataset(vector_store, large_vectors, test_settings):
     with timeout(1):  # Search should complete within 1 second
         distances, indices = vector_store.search(query, k=10)
     assert len(indices[0]) == 10
+
+def test_factory():
+    """Test vector store factory."""
+    settings = Settings()
+    
+    # Test creating FAISS store
+    settings.vector_store_type = VectorStoreType.FAISS.value
+    store = VectorStoreFactory.create(VectorStoreType.FAISS, settings)
+    assert isinstance(store, FAISSVectorStore)
+    
+    # Test creating Persistent store
+    settings.vector_store_type = VectorStoreType.PERSISTENT.value
+    store = VectorStoreFactory.create(VectorStoreType.PERSISTENT, settings)
+    assert isinstance(store, VectorStore)  # Should be wrapped in PersistentStore
+    
+    # Test registering new implementation
+    class CustomStore(VectorStore):
+        def __init__(self, settings): pass
+        def add(self, vectors): pass
+        def search(self, query_vectors, k=None): pass
+        def save(self, path=None): pass
+        def load(self, path=None): pass
+        def __len__(self): return 0
+    
+    VectorStoreFactory.register_implementation("custom", CustomStore)
+    settings.vector_store_type = "custom"
+    store = VectorStoreFactory.create(VectorStoreType("custom"), settings)
+    assert isinstance(store, CustomStore)
+
+def test_factory_unknown_type():
+    """Test factory with unknown store type."""
+    settings = Settings()
+    with pytest.raises(ValueError, match="Unknown store type"):
+        VectorStoreFactory.create(VectorStoreType("unknown"), settings)
+
+def test_factory_registration():
+    """Test factory implementation registration."""
+    settings = Settings()
+    
+    # Create custom implementation
+    class CustomStore(VectorStore):
+        def __init__(self, settings): self.settings = settings
+        def add(self, vectors): pass
+        def search(self, query_vectors, k=None): pass
+        def save(self, path=None): pass
+        def load(self, path=None): pass
+        def __len__(self): return 0
+    
+    # Register implementation
+    VectorStoreFactory.register_implementation("custom", CustomStore)
+    
+    # Create store using registered implementation
+    store = VectorStoreFactory.create(VectorStoreType("custom"), settings)
+    assert isinstance(store, CustomStore)
+    assert store.settings == settings
