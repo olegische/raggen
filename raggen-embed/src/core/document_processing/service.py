@@ -24,7 +24,15 @@ class DocumentProcessingService:
         Args:
             text_splitter: Service for text splitting and embedding
             vector_store_service: Service for vector storage
+            
+        Raises:
+            ValueError: If text_splitter or vector_store_service is None
         """
+        if text_splitter is None:
+            raise ValueError("Text splitter must be provided")
+        if vector_store_service is None:
+            raise ValueError("Vector store service must be provided")
+            
         self.text_splitter = text_splitter
         self.vector_store_service = vector_store_service
     
