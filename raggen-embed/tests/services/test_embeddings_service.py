@@ -26,7 +26,7 @@ def test_service_with_empty_input(app_container):
         service.get_embeddings([])
     
     # None text
-    with pytest.raises(ValueError, match="Empty text at position 0"):
+    with pytest.raises(TypeError, match="Expected string input, got <class 'NoneType'>"):
         service.get_embedding(None)
     
     # Empty string
