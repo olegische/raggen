@@ -1,5 +1,5 @@
 """Application-level dependency container."""
-from typing import Optional, Dict, Type, Union
+from typing import Optional
 from core.vector_store.base import VectorStore
 
 from config.settings import Settings
@@ -9,12 +9,18 @@ from core.embeddings.cache.lru_cache import LRUEmbeddingCache
 from core.vector_store.service import VectorStoreService
 from core.vector_store.factory import VectorStoreFactory
 from core.vector_store.implementations import FAISSVectorStore
-from core.text_splitting.factory import TextSplitStrategyFactory
-from core.text_splitting.service import TextSplitterService
-from core.document_processing import DocumentProcessingService
 
 class ApplicationContainer:
-    """Container for application-level dependencies."""
+    """
+    Container for application-level dependencies.
+    
+    Contains only singleton services that should be shared across requests:
+    - Settings: Application configuration
+    - EmbeddingService: Heavy model initialization and cache
+    - VectorStore: Shared vector storage
+    - VectorStoreService: Service for vector operations
+    - VectorStoreFactory: Factory for creating stores
+    """
     
     # Singleton instances
     _settings: Optional[Settings] = None
@@ -22,13 +28,18 @@ class ApplicationContainer:
     _vector_store_factory: Optional[VectorStoreFactory] = None
     _faiss_store: Optional[VectorStore] = None
     _embedding_service: Optional[EmbeddingService] = None
-    _text_splitter_service: Optional[TextSplitterService] = None
-    _document_processing_service: Optional[DocumentProcessingService] = None
     
     @classmethod
     def configure(cls, settings: Settings) -> None:
         """
         Configure container with application settings.
+        
+        Initializes singleton services that are shared across requests:
+        - Settings: Application configuration
+        - VectorStoreFactory: Factory for creating stores
+        - FAISSVectorStore: Base vector store
+        - VectorStoreService: Service for vector operations
+        - EmbeddingService: Heavy model and cache initialization
         
         Args:
             settings: Application settings
@@ -46,26 +57,12 @@ class ApplicationContainer:
             base_store=cls._faiss_store
         )
         
-        # Create embedding service
+        # Create embedding service with heavy model and cache
         model = TransformerModel(lazy_init=True)
         cache = LRUEmbeddingCache(max_size=settings.batch_size * 10)
         cls._embedding_service = EmbeddingService(
             model=model,
             cache=cache,
-            settings=settings
-        )
-        
-        # Create text splitter service
-        factory = TextSplitStrategyFactory()
-        strategy = factory.create(
-            settings.text_split_strategy,
-            min_length=settings.text_min_length,
-            max_length=settings.text_max_length,
-            overlap=settings.text_overlap
-        )
-        cls._text_splitter_service = TextSplitterService(
-            embedding_service=cls._embedding_service,
-            split_strategy=strategy,
             settings=settings
         )
     
@@ -120,31 +117,10 @@ class ApplicationContainer:
         return cls._embedding_service
     
     @classmethod
-    def get_text_splitter_service(cls) -> TextSplitterService:
-        """Get text splitter service."""
-        if cls._text_splitter_service is None:
-            raise RuntimeError("Container not configured. Call configure() first.")
-        return cls._text_splitter_service
-    
-    @classmethod
-    def get_document_processing_service(cls) -> DocumentProcessingService:
-        """Get document processing service."""
-        if cls._document_processing_service is None:
-            text_splitter = cls.get_text_splitter_service()
-            vector_store_service = cls.get_vector_store_service()
-            cls._document_processing_service = DocumentProcessingService(
-                text_splitter,
-                vector_store_service
-            )
-        return cls._document_processing_service
-    
-    @classmethod
     def reset(cls) -> None:
-        """Reset container state."""
+        """Reset singleton services state."""
         cls._settings = None
         cls._vector_store_service = None
         cls._vector_store_factory = None
         cls._faiss_store = None
         cls._embedding_service = None
-        cls._text_splitter_service = None
-        cls._document_processing_service = None

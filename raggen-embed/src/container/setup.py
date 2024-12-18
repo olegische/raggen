@@ -27,18 +27,19 @@ def setup_di(app: FastAPI, settings: Settings) -> None:
     # Configure application container
     ApplicationContainer.configure(settings)
     
-    # Register application-level dependencies
+    # Register application-level dependencies (синглтоны)
     app.dependency_overrides.update({
         Settings: ApplicationContainer.get_settings,
         VectorStore: lambda: ApplicationContainer.get_vector_store_service().store,
         VectorStoreFactory: ApplicationContainer.get_vector_store_factory,
-        DocumentProcessingService: ApplicationContainer.get_document_processing_service,
         EmbeddingService: ApplicationContainer.get_embedding_service,
+        VectorStoreService: ApplicationContainer.get_vector_store_service,
     })
     
-    # Register request-level dependencies
+    # Register request-level dependencies (новый инстанс на каждый запрос)
     app.dependency_overrides.update({
         TextSplitterService: RequestContainer.get_text_splitter_service,
+        DocumentProcessingService: RequestContainer.get_document_processing_service,
     })
     
     logger.info("Dependency injection configured")
