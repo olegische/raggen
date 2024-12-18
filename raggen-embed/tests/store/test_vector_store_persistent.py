@@ -10,11 +10,9 @@ from unittest.mock import MagicMock, patch
 import threading
 import tempfile
 
-from src.core.vector_store.implementations import PersistentStore, FAISSVectorStore
-from src.core.vector_store.base import VectorStore
-from src.core.vector_store.factory import VectorStoreFactory
-from src.core.vector_store.service import VectorStoreService
-from src.config.settings import VectorStoreServiceType, VectorStoreImplementationType
+from core.vector_store.implementations import PersistentStore, FAISSVectorStore
+from core.vector_store.base import VectorStore
+from core.vector_store.service import VectorStoreService
 
 logger = logging.getLogger(__name__)
 
@@ -24,17 +22,18 @@ def test_initialization(app_container, store_settings):
     store_dir = os.path.join(tempfile.mkdtemp(), "new_dir")
     store_settings.faiss_index_path = os.path.join(store_dir, "index.faiss")
     
-    # Создаем директорию с правильными правами
+    # Create directory with proper permissions
     os.makedirs(store_dir, mode=0o755, exist_ok=True)
     
-    # Get base store from container
+    # Get dependencies from container
     base_store = app_container.get_faiss_store()
+    factory = app_container.get_vector_store_factory()
     
     # Create persistent store with injected base store
     store = PersistentStore(
         settings=store_settings,
         store=base_store,
-        factory=VectorStoreFactory()
+        factory=factory
     )
     
     assert os.path.exists(store_dir)
@@ -49,14 +48,15 @@ def test_initialization(app_container, store_settings):
 
 def test_file_operations(app_container, store_settings, sample_vectors):
     """Test file system operations."""
-    # Get base store from container
+    # Get dependencies from container
     base_store = app_container.get_faiss_store()
+    factory = app_container.get_vector_store_factory()
     
     # Create persistent store with injected base store
     store = PersistentStore(
         settings=store_settings,
         store=base_store,
-        factory=VectorStoreFactory(),
+        factory=factory,
         auto_save=False
     )
     
@@ -79,14 +79,15 @@ def test_file_operations(app_container, store_settings, sample_vectors):
 
 def test_backup_management(app_container, store_settings, sample_vectors):
     """Test backup creation and management."""
-    # Get base store from container
+    # Get dependencies from container
     base_store = app_container.get_faiss_store()
+    factory = app_container.get_vector_store_factory()
     
     # Create persistent store with injected base store
     store = PersistentStore(
         settings=store_settings,
         store=base_store,
-        factory=VectorStoreFactory(),
+        factory=factory,
         auto_save=False
     )
     
@@ -115,14 +116,15 @@ def test_backup_management(app_container, store_settings, sample_vectors):
 
 def test_backup_recovery(app_container, store_settings, sample_vectors):
     """Test backup recovery process."""
-    # Get base store from container
+    # Get dependencies from container
     base_store = app_container.get_faiss_store()
+    factory = app_container.get_vector_store_factory()
     
     # Create persistent store with injected base store
     store = PersistentStore(
         settings=store_settings,
         store=base_store,
-        factory=VectorStoreFactory(),
+        factory=factory,
         auto_save=False
     )
     
@@ -134,7 +136,7 @@ def test_backup_recovery(app_container, store_settings, sample_vectors):
     backup_path = original_path + ".backup"
     shutil.copy2(original_path, backup_path)
     
-    # Сохраняем размер оригинального файла
+    # Save original file size
     original_size = os.path.getsize(original_path)
     
     # Corrupt original file
@@ -145,81 +147,126 @@ def test_backup_recovery(app_container, store_settings, sample_vectors):
     app_container.reset()
     app_container.configure(store_settings)
     
-    # Get new base store
+    # Get new dependencies
     new_base_store = app_container.get_faiss_store()
+    factory = app_container.get_vector_store_factory()
     
     # Try to create new persistent store with corrupted file
     with pytest.raises(RuntimeError):
         store = PersistentStore(
             settings=store_settings,
             store=new_base_store,
-            factory=VectorStoreFactory()
+            factory=factory
         )
     
-    # Восстанавливаем из бэкапа вручную
+    # Restore from backup manually
     shutil.copy2(backup_path, original_path)
     
     # Create new store after recovery
     store = PersistentStore(
         settings=store_settings,
         store=new_base_store,
-        factory=VectorStoreFactory()
+        factory=factory
     )
     
     assert os.path.getsize(original_path) == original_size
 
 def test_concurrent_operations(app_container, store_settings, sample_vectors):
-    """Test concurrent file operations."""
-    # Get base store from container
+    """Test concurrent operations with proper synchronization.
+    
+    FAISS has important thread-safety limitations:
+    - Write operations (add) must be synchronized as FAISS doesn't support concurrent writes
+    - Read operations (search) can be performed concurrently
+    
+    This test verifies both scenarios:
+    1. Synchronized write operations using threading.Lock
+    2. Concurrent read operations which are supported by FAISS
+    """
+    # Get dependencies from container
     base_store = app_container.get_faiss_store()
+    factory = app_container.get_vector_store_factory()
     
     # Create persistent store with injected base store
     store = PersistentStore(
         settings=store_settings,
         store=base_store,
-        factory=VectorStoreFactory(),
+        factory=factory,
         auto_save=False
     )
     
-    n_threads = 5
+    # Add initial vectors for search testing
+    store.add(sample_vectors)
+    store.save()
     
-    def add_vectors():
-        store.add(sample_vectors)
-        store.save()
-        time.sleep(0.1)  # Simulate work
+    # Test 1: Synchronized write operations
+    write_lock = threading.Lock()
+    n_write_threads = 5
     
-    # Run concurrent operations
-    threads = []
-    for _ in range(n_threads):
-        thread = threading.Thread(target=add_vectors)
-        threads.append(thread)
+    def add_vectors_safe():
+        with write_lock:  # Synchronize FAISS write operations
+            store.add(sample_vectors)
+            store.save()
+    
+    # Run concurrent write operations
+    write_threads = []
+    for _ in range(n_write_threads):
+        thread = threading.Thread(target=add_vectors_safe)
+        write_threads.append(thread)
         thread.start()
     
-    for thread in threads:
+    for thread in write_threads:
         thread.join()
     
-    # Verify file integrity
+    # Verify write operations completed successfully
     assert os.path.exists(store_settings.faiss_index_path)
     assert os.path.getsize(store_settings.faiss_index_path) > 0
+    expected_vectors = (n_write_threads + 1) * len(sample_vectors)  # +1 for initial vectors
+    assert len(store) == expected_vectors
+    
+    # Test 2: Concurrent read operations
+    n_read_threads = 10
+    query = sample_vectors[0:1]
+    results = []
+    
+    def search_vectors():
+        # Search operations can run concurrently
+        distances, indices = store.search(query)
+        results.append((distances, indices))
+    
+    # Run concurrent search operations
+    read_threads = []
+    for _ in range(n_read_threads):
+        thread = threading.Thread(target=search_vectors)
+        read_threads.append(thread)
+        thread.start()
+    
+    for thread in read_threads:
+        thread.join()
+    
+    # Verify all search operations returned consistent results
+    for i in range(1, len(results)):
+        np.testing.assert_array_equal(results[0][0], results[i][0])  # distances
+        np.testing.assert_array_equal(results[0][1], results[i][1])  # indices
 
 @pytest.mark.skipif(os.name == 'nt', reason="Disk space check not supported on Windows")
 def test_disk_space_handling(app_container, store_settings, sample_vectors):
     """Test handling of disk space issues."""
-    # Get base store from container
+    # Get dependencies from container
     base_store = app_container.get_faiss_store()
+    factory = app_container.get_vector_store_factory()
     
     # Create persistent store with injected base store
     store = PersistentStore(
         settings=store_settings,
         store=base_store,
-        factory=VectorStoreFactory(),
+        factory=factory,
         auto_save=False
     )
     
-    # Патчим os.statvfs для симуляции нехватки места
+    # Mock os.statvfs to simulate disk space issues
     mock_statvfs = MagicMock()
     mock_statvfs.return_value.f_frsize = 4096
-    mock_statvfs.return_value.f_bavail = 0  # Нет свободного места
+    mock_statvfs.return_value.f_bavail = 0  # No free space
     
     with patch('os.statvfs', mock_statvfs):
         with patch.object(store.store, 'save', side_effect=OSError("No space left on device")):
@@ -229,14 +276,15 @@ def test_disk_space_handling(app_container, store_settings, sample_vectors):
 
 def test_store_delegation(app_container, store_settings, sample_vectors):
     """Test basic store delegation."""
-    # Get base store from container
+    # Get dependencies from container
     base_store = app_container.get_faiss_store()
+    factory = app_container.get_vector_store_factory()
     
     # Create persistent store with injected base store
     store = PersistentStore(
         settings=store_settings,
         store=base_store,
-        factory=VectorStoreFactory(),
+        factory=factory,
         auto_save=False
     )
     
@@ -258,15 +306,16 @@ def test_error_handling(app_container, store_settings):
     invalid_dir = "/nonexistent/directory"
     store_settings.faiss_index_path = os.path.join(invalid_dir, "index.faiss")
     
-    # Get base store from container
+    # Get dependencies from container
     base_store = app_container.get_faiss_store()
+    factory = app_container.get_vector_store_factory()
     
     # Try to create store with invalid path
     with pytest.raises((OSError, RuntimeError)):
         store = PersistentStore(
             settings=store_settings,
             store=base_store,
-            factory=VectorStoreFactory()
+            factory=factory
         )
     
     # Test with invalid permissions
@@ -279,7 +328,7 @@ def test_error_handling(app_container, store_settings):
             store = PersistentStore(
                 settings=store_settings,
                 store=base_store,
-                factory=VectorStoreFactory()
+                factory=factory
             )
         os.chmod(temp_dir, stat.S_IRWXU)  # Restore permissions for cleanup
     
@@ -288,14 +337,15 @@ def test_error_handling(app_container, store_settings):
 
 def test_auto_loading(app_container, store_settings, sample_vectors):
     """Test automatic index loading."""
-    # Get base store from container
+    # Get dependencies from container
     base_store = app_container.get_faiss_store()
+    factory = app_container.get_vector_store_factory()
     
     # Create first persistent store with injected base store
     store = PersistentStore(
         settings=store_settings,
         store=base_store,
-        factory=VectorStoreFactory(),
+        factory=factory,
         auto_save=False
     )
     
@@ -307,14 +357,15 @@ def test_auto_loading(app_container, store_settings, sample_vectors):
     app_container.reset()
     app_container.configure(store_settings)
     
-    # Get new base store
+    # Get new dependencies
     new_base_store = app_container.get_faiss_store()
+    factory = app_container.get_vector_store_factory()
     
     # Create second persistent store with new base store
     new_store = PersistentStore(
         settings=store_settings,
         store=new_base_store,
-        factory=VectorStoreFactory()
+        factory=factory
     )
     
     # Test search to verify data was loaded
@@ -327,14 +378,15 @@ def test_auto_loading(app_container, store_settings, sample_vectors):
 
 def test_explicit_loading(app_container, store_settings, sample_vectors):
     """Test explicit index loading."""
-    # Get base store from container
+    # Get dependencies from container
     base_store = app_container.get_faiss_store()
+    factory = app_container.get_vector_store_factory()
     
     # Create first persistent store with injected base store
     store = PersistentStore(
         settings=store_settings,
         store=base_store,
-        factory=VectorStoreFactory(),
+        factory=factory,
         auto_save=False
     )
     
@@ -348,14 +400,15 @@ def test_explicit_loading(app_container, store_settings, sample_vectors):
         app_container.reset()
         app_container.configure(store_settings)
         
-        # Get new base store
+        # Get new dependencies
         new_base_store = app_container.get_faiss_store()
+        factory = app_container.get_vector_store_factory()
         
         # Create second persistent store with new base store
         new_store = PersistentStore(
             settings=store_settings,
             store=new_base_store,
-            factory=VectorStoreFactory()
+            factory=factory
         )
         
         # Load from custom path
@@ -374,14 +427,15 @@ def test_explicit_loading(app_container, store_settings, sample_vectors):
 
 def test_load_errors(app_container, store_settings):
     """Test error handling during load."""
-    # Get base store from container
+    # Get dependencies from container
     base_store = app_container.get_faiss_store()
+    factory = app_container.get_vector_store_factory()
     
     # Create persistent store with injected base store
     store = PersistentStore(
         settings=store_settings,
         store=base_store,
-        factory=VectorStoreFactory()
+        factory=factory
     )
     
     # Test with non-existent file

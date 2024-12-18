@@ -11,15 +11,18 @@ import os
 import signal
 import psutil
 import time
+import logging
 from contextlib import contextmanager
 import numpy as np
 import pytest
 import faiss
 
-from src.core.vector_store.base import VectorStore
-from src.core.vector_store.implementations import FAISSVectorStore
-from src.core.vector_store.factory import VectorStoreFactory
-from src.config.settings import Settings, IndexType, VectorStoreServiceType, VectorStoreImplementationType
+from core.vector_store.base import VectorStore
+from core.vector_store.implementations import FAISSVectorStore
+from core.vector_store.factory import VectorStoreFactory
+from config.settings import Settings, IndexType, VectorStoreServiceType, VectorStoreImplementationType
+
+logger = logging.getLogger(__name__)
 
 
 def get_memory_usage():
@@ -67,15 +70,28 @@ def timeout(seconds):
 
 def test_base_interface(app_container):
     """Test that FAISSVectorStore implements VectorStore interface."""
+    logger.info("[Test] Starting base interface test")
     store = app_container.get_faiss_store()
-    assert isinstance(store, VectorStore)
+    
+    # Debug logging
+    logger.info("[Test] Store type: %s", type(store))
+    logger.info("[Test] Store MRO: %s", type(store).__mro__)
+    logger.info("[Test] VectorStore type: %s", VectorStore)
+    logger.info("[Test] VectorStore MRO: %s", VectorStore.__mro__)
+    logger.info("[Test] Store base classes: %s", type(store).__bases__)
+    logger.info("[Test] Store instance dict: %s", store.__dict__)
+    
+    # Test inheritance
+    assert isinstance(store, VectorStore), f"Expected store to be instance of VectorStore, but got {type(store)}"
     
     # Check all required methods are implemented
-    assert hasattr(store, 'add')
-    assert hasattr(store, 'search')
-    assert hasattr(store, 'save')
-    assert hasattr(store, 'load')
-    assert hasattr(store, '__len__')
+    assert hasattr(store, 'add'), "Missing 'add' method"
+    assert hasattr(store, 'search'), "Missing 'search' method"
+    assert hasattr(store, 'save'), "Missing 'save' method"
+    assert hasattr(store, 'load'), "Missing 'load' method"
+    assert hasattr(store, '__len__'), "Missing '__len__' method"
+    
+    logger.info("[Test] Base interface test completed")
 
 
 def test_initialization(app_container, store_settings):

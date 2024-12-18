@@ -8,15 +8,15 @@ import numpy as np
 import logging
 import faiss
 
-from src.config.settings import (
+from config.settings import (
     Settings,
     reset_settings,
     VectorStoreServiceType,
     VectorStoreImplementationType
 )
-from src.core.vector_store.implementations import FAISSVectorStore
-from src.core.vector_store.service import VectorStoreService
-from src.core.vector_store.factory import VectorStoreFactory
+from core.vector_store.implementations.faiss import FAISSVectorStore
+from core.vector_store.service import VectorStoreService
+from core.vector_store.factory import VectorStoreFactory
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +58,10 @@ class MockApplicationContainer:
     @classmethod
     def get_vector_store_service(cls):
         return cls._vector_store_service
+    
+    @classmethod
+    def get_vector_store_factory(cls):
+        return cls._vector_store_factory
     
     @classmethod
     def reset(cls):
