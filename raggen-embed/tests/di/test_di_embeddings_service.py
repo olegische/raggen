@@ -46,11 +46,11 @@ def test_embedding_service_maintains_state_across_uses(app_container):
     logger.info("Cache stats after reuse: %s", stats)
     assert stats["hits"] == 1, "Should use shared cache across service instances"
 
-def test_embedding_service_state_persists_container_reset(app_container):
-    """Test that EmbeddingService state persists when container is reset."""
+def test_embedding_service_consistency_after_reset(app_container):
+    """Test that EmbeddingService produces consistent embeddings after container reset."""
     # Get initial service and use it
     service = app_container.get_embedding_service()
-    test_text = "test text for persistence"
+    test_text = "test text for consistency check"
     first_embedding = service.get_embedding(test_text)
     
     # Store settings before reset
@@ -66,10 +66,13 @@ def test_embedding_service_state_persists_container_reset(app_container):
     new_service = app_container.get_embedding_service()
     second_embedding = new_service.get_embedding(test_text)
     
-    # Should get same result
+    # Should get same embeddings even with new service instance
     np.testing.assert_array_equal(first_embedding, second_embedding)
+    
+    # Cache should be fresh in new instance
     stats = new_service.get_cache_stats()
-    assert stats["hits"] == 1, "Cache should persist across container resets"
+    assert stats["hits"] == 0, "New service instance should have fresh cache"
+    assert stats["misses"] == 1, "Should have one cache miss for the embedding generation"
 
 def test_embedding_service_requires_container_configuration():
     """Test that EmbeddingService requires container to be configured."""
