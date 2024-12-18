@@ -4,6 +4,8 @@ from core.vector_store.base import VectorStore
 
 from config.settings import Settings
 from core.embeddings import EmbeddingService
+from core.embeddings.implementations.transformer_model import TransformerModel
+from core.embeddings.cache.lru_cache import LRUEmbeddingCache
 from core.vector_store.service import VectorStoreService
 from core.vector_store.factory import VectorStoreFactory
 from core.vector_store.implementations import FAISSVectorStore
@@ -47,7 +49,14 @@ class ApplicationContainer:
             base_store=cls._faiss_store
         )
         
-        cls._embedding_service = EmbeddingService()
+        # Create embedding service dependencies
+        model = TransformerModel(lazy_init=True)
+        cache = LRUEmbeddingCache(max_size=settings.batch_size * 10)
+        cls._embedding_service = EmbeddingService(
+            model=model,
+            cache=cache,
+            settings=settings
+        )
         cls._text_split_factory = TextSplitStrategyFactory()
     
     @classmethod

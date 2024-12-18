@@ -8,6 +8,7 @@ from core.vector_store.base import VectorStore
 from core.vector_store.factory import VectorStoreFactory
 from core.text_splitting.service import TextSplitterService
 from core.document_processing import DocumentProcessingService
+from core.embeddings import EmbeddingService
 from .application import ApplicationContainer
 from .request import RequestContainer
 
@@ -32,6 +33,7 @@ def setup_di(app: FastAPI, settings: Settings) -> None:
         VectorStore: lambda: ApplicationContainer.get_vector_store_service().store,
         VectorStoreFactory: ApplicationContainer.get_vector_store_factory,
         DocumentProcessingService: ApplicationContainer.get_document_processing_service,
+        EmbeddingService: ApplicationContainer.get_embedding_service,
     })
     
     # Register request-level dependencies

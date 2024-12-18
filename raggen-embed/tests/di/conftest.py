@@ -15,6 +15,9 @@ from config.settings import (
 from core.vector_store.implementations.faiss import FAISSVectorStore
 from core.vector_store.service import VectorStoreService
 from core.vector_store.factory import VectorStoreFactory
+from core.embeddings import EmbeddingService
+from core.embeddings.implementations.transformer_model import TransformerModel
+from core.embeddings.cache.lru_cache import LRUEmbeddingCache
 
 class MockApplicationContainer:
     """Mock container for testing."""
@@ -22,16 +25,30 @@ class MockApplicationContainer:
     _vector_store_service = None
     _vector_store_factory = None
     _faiss_store = None
+    _embedding_service = None
+    _embedding_model = None
+    _embedding_cache = None
     
     @classmethod
     def configure(cls, settings):
         cls._settings = settings
+        
+        # Vector store dependencies
         cls._vector_store_factory = VectorStoreFactory()
         cls._faiss_store = FAISSVectorStore(settings)
         cls._vector_store_service = VectorStoreService(
             settings=settings,
             factory=cls._vector_store_factory,
             base_store=cls._faiss_store
+        )
+        
+        # Embedding service dependencies
+        cls._embedding_model = TransformerModel(lazy_init=True)
+        cls._embedding_cache = LRUEmbeddingCache(max_size=settings.batch_size * 10)
+        cls._embedding_service = EmbeddingService(
+            model=cls._embedding_model,
+            cache=cls._embedding_cache,
+            settings=settings
         )
     
     @classmethod
@@ -51,11 +68,35 @@ class MockApplicationContainer:
         return cls._vector_store_factory
     
     @classmethod
+    def get_embedding_service(cls):
+        """Get embedding service."""
+        if cls._embedding_service is None:
+            raise RuntimeError("Container not configured. Call configure() first.")
+        return cls._embedding_service
+    
+    @classmethod
+    def get_embedding_model(cls):
+        """Get embedding model."""
+        if cls._embedding_model is None:
+            raise RuntimeError("Container not configured. Call configure() first.")
+        return cls._embedding_model
+    
+    @classmethod
+    def get_embedding_cache(cls):
+        """Get embedding cache."""
+        if cls._embedding_cache is None:
+            raise RuntimeError("Container not configured. Call configure() first.")
+        return cls._embedding_cache
+    
+    @classmethod
     def reset(cls):
         cls._settings = None
         cls._vector_store_service = None
         cls._vector_store_factory = None
         cls._faiss_store = None
+        cls._embedding_service = None
+        cls._embedding_model = None
+        cls._embedding_cache = None
 
 @pytest.fixture(scope="function")
 def di_settings():
