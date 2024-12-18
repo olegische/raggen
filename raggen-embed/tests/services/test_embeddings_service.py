@@ -1,129 +1,153 @@
-"""Tests for embedding service."""
-from unittest.mock import MagicMock, patch
-import numpy as np
+"""Tests for embedding service functionality."""
 import pytest
+import numpy as np
+import logging
 
-from core.embeddings import (
-    EmbeddingService,
-    EmbeddingModel,
-    EmbeddingCache,
-    DefaultEmbeddingService
-)
-from config.settings import Settings
+from core.embeddings import DefaultEmbeddingService
 
-@pytest.fixture
-def mock_model():
-    """Fixture for mock embedding model."""
-    model = MagicMock(spec=EmbeddingModel)
-    # Setup encode to return fixed embeddings for deterministic tests
-    def mock_encode(texts, convert_to_numpy=True):
-        # Return fixed embeddings with correct dimension
-        return np.ones((len(texts), 384), dtype=np.float32)
-    model.encode.side_effect = mock_encode
-    return model
+logger = logging.getLogger(__name__)
 
-@pytest.fixture
-def mock_cache():
-    """Fixture for mock embedding cache."""
-    cache = MagicMock(spec=EmbeddingCache)
-    cache.get_stats.return_value = {"hits": 0, "misses": 0, "total": 0, "size": 0}
-    return cache
-
-@pytest.fixture
-def service(mock_model, mock_cache):
-    """Fixture for embedding service with mocks."""
-    return DefaultEmbeddingService(
-        model=mock_model,
-        cache=mock_cache,
-        settings=Settings()
-    )
-
-def test_get_embedding(service, mock_model, mock_cache):
-    """Test single text embedding with cache."""
-    text = "test text"
-    # Use fixed embedding with correct dimension
-    expected_embedding = np.ones(384, dtype=np.float32)
+def test_service_initialization(app_container):
+    """Test embedding service initialization."""
+    service = app_container.get_embedding_service()
     
-    # Setup cache miss then hit
-    mock_cache.get.side_effect = [KeyError, expected_embedding]
-    mock_model.encode.return_value = expected_embedding.reshape(1, -1)
-    
-    # First call - cache miss
-    embedding1 = service.get_embedding(text)
-    np.testing.assert_array_equal(embedding1, expected_embedding)
-    mock_cache.get.assert_called_with(text)
-    mock_model.encode.assert_called_once()
-    mock_cache.put.assert_called_once()
-    
-    # Second call - cache hit
-    embedding2 = service.get_embedding(text)
-    np.testing.assert_array_equal(embedding2, expected_embedding)
-    assert mock_model.encode.call_count == 1  # No additional calls
+    # Check service properties
+    assert isinstance(service, DefaultEmbeddingService)
+    assert service._settings is not None
+    assert service._model is not None
+    assert service._cache is not None
 
-def test_get_embeddings(service, mock_model):
-    """Test batch text embedding."""
-    texts = ["first text", "second text"]
-    # Use fixed embeddings for deterministic test
-    expected_embeddings = np.ones((2, 384), dtype=np.float32)
-    mock_model.encode.return_value = expected_embeddings
+def test_service_with_empty_input(app_container):
+    """Test service behavior with empty input."""
+    service = app_container.get_embedding_service()
     
-    embeddings = service.get_embeddings(texts)
-    np.testing.assert_array_equal(embeddings, expected_embeddings)
-    mock_model.encode.assert_called_once_with(texts)
-
-def test_input_validation(service):
-    """Test input validation."""
-    settings = Settings()
-    
-    # Test empty text
-    with pytest.raises(ValueError, match="Empty text at position 0"):
-        service.get_embedding("")
-    
-    # Test empty list
+    # Empty text
     with pytest.raises(ValueError, match="Empty text list provided"):
         service.get_embeddings([])
     
-    # Test list with empty text
-    with pytest.raises(ValueError, match="Empty text at position"):
-        service.get_embeddings(["", ""])
+    # None text
+    with pytest.raises(ValueError, match="Empty text at position 0"):
+        service.get_embedding(None)
     
-    # Test text exceeding max length
-    long_text = "a" * (settings.max_text_length + 1)
-    with pytest.raises(ValueError, match="exceeds maximum length"):
-        service.get_embedding(long_text)
+    # Empty string
+    with pytest.raises(ValueError, match="Empty text at position 0"):
+        service.get_embedding("")
+    
+    # Whitespace string
+    with pytest.raises(ValueError, match="Empty text at position 0"):
+        service.get_embedding("   ")
 
-def test_cache_stats(service, mock_cache):
-    """Test cache statistics."""
-    expected_stats = {
-        "hits": 5,
-        "misses": 3,
-        "total": 8,
-        "size": 3
-    }
-    mock_cache.get_stats.return_value = expected_stats
+def test_service_text_length_limit(app_container):
+    """Test service text length limit handling."""
+    service = app_container.get_embedding_service()
+    max_length = service._settings.max_text_length
     
-    stats = service.get_cache_stats()
-    assert stats == expected_stats
-    mock_cache.get_stats.assert_called_once()
-
-def test_real_service_integration():
-    """Integration test with real components."""
-    service = DefaultEmbeddingService()  # Use real implementations
-    
-    # Test single embedding
-    text = "This is a test text"
-    embedding = service.get_embedding(text)
+    # Text at limit should work
+    text_at_limit = "x" * max_length
+    embedding = service.get_embedding(text_at_limit)
     assert isinstance(embedding, np.ndarray)
-    assert embedding.shape == (384,)  # Default dimension
+    assert embedding.shape == (service._settings.vector_dim,)
     
-    # Test batch embeddings
-    texts = ["First text", "Second text"]
+    # Text over limit should fail
+    text_over_limit = "x" * (max_length + 1)
+    with pytest.raises(ValueError, match=f"Text at position 0 exceeds maximum length of {max_length}"):
+        service.get_embedding(text_over_limit)
+
+def test_service_batch_processing(app_container):
+    """Test service batch processing functionality."""
+    service = app_container.get_embedding_service()
+    
+    # Create texts of different lengths
+    texts = [
+        "Short text",
+        "Medium length text for testing",
+        "A longer text that contains multiple words and tests batch processing"
+    ]
+    
+    # Get embeddings in batch
     embeddings = service.get_embeddings(texts)
-    assert isinstance(embeddings, np.ndarray)
-    assert embeddings.shape == (2, 384)
     
-    # Test caching
-    _ = service.get_embedding(text)  # Should be cached
+    # Check batch result
+    assert isinstance(embeddings, np.ndarray)
+    assert embeddings.shape == (len(texts), service._settings.vector_dim)
+    assert embeddings.dtype == np.float32
+    
+    # Compare with individual processing
+    for i, text in enumerate(texts):
+        individual = service.get_embedding(text)
+        np.testing.assert_array_almost_equal(
+            embeddings[i],
+            individual,
+            decimal=6,
+            err_msg=f"Batch result differs for text {i}"
+        )
+
+def test_service_cache_integration(app_container):
+    """Test service integration with cache."""
+    service = app_container.get_embedding_service()
+    
+    # First request - should miss cache
+    text = "Test text for cache integration"
+    first_embedding = service.get_embedding(text)
+    stats = service.get_cache_stats()
+    assert stats["hits"] == 0
+    assert stats["misses"] == 1
+    
+    # Second request - should hit cache
+    second_embedding = service.get_embedding(text)
     stats = service.get_cache_stats()
     assert stats["hits"] == 1
     assert stats["misses"] == 1
+    
+    # Results should be identical
+    np.testing.assert_array_equal(
+        first_embedding,
+        second_embedding,
+        "Cached result should match original"
+    )
+
+def test_service_error_handling(app_container):
+    """Test service error handling."""
+    service = app_container.get_embedding_service()
+    
+    # Test with invalid input types
+    with pytest.raises(TypeError, match="Expected string input, got <class 'int'>"):
+        service.get_embedding(123)  # Non-string input
+    
+    with pytest.raises(TypeError, match="Expected string input, got <class 'list'>"):
+        service.get_embedding([])  # List instead of string
+    
+    with pytest.raises(TypeError, match="Expected list of texts, got <class 'str'>"):
+        service.get_embeddings("text")  # String instead of list - raises TypeError with type mismatch message
+    
+    # Test with invalid batch input
+    with pytest.raises(TypeError, match="Expected string at position 1, got <class 'NoneType'>"):
+        service.get_embeddings(["valid text", None, "valid text"])  # None in batch
+    
+    with pytest.raises(TypeError, match="Expected string at position 1, got <class 'int'>"):
+        service.get_embeddings(["valid text", 123, "valid text"])  # Non-string in batch
+    
+    with pytest.raises(ValueError, match="Empty text at position 1"):
+        service.get_embeddings(["valid text", "", "valid text"])  # Empty string in batch
+
+def test_service_dimension_consistency(app_container):
+    """Test service output dimension consistency."""
+    service = app_container.get_embedding_service()
+    expected_dim = service._settings.vector_dim
+    
+    # Test with various inputs
+    texts = [
+        "Very short.",
+        "A bit longer text.",
+        "An even longer text with more content.",
+        "A much longer text that contains multiple sentences and tests dimension consistency."
+    ]
+    
+    # Check individual processing
+    for text in texts:
+        embedding = service.get_embedding(text)
+        assert embedding.shape == (expected_dim,), f"Wrong dimension for text: {text}"
+    
+    # Check batch processing
+    batch_embeddings = service.get_embeddings(texts)
+    assert batch_embeddings.shape == (len(texts), expected_dim), "Wrong batch dimensions"

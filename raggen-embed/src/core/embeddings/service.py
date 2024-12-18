@@ -48,7 +48,15 @@ class EmbeddingService(BaseEmbeddingService):
             raise ValueError("Empty text list provided")
         
         for i, text in enumerate(texts):
-            if not text or not text.strip():
+            # First check if text has strip() method
+            try:
+                stripped = text.strip()
+            except AttributeError as e:
+                logger.debug("Invalid text type at position %d: %s", i, type(text))
+                raise
+            
+            # Then check if text is empty
+            if not text or not stripped:
                 raise ValueError(f"Empty text at position {i}")
             if len(text) > self._settings.max_text_length:
                 raise ValueError(
@@ -69,6 +77,18 @@ class EmbeddingService(BaseEmbeddingService):
             ValueError: If input validation fails
         """
         try:
+            # First validate input type
+            if not isinstance(texts, list):
+                logger.debug("Invalid input type: %s", type(texts))
+                raise TypeError(f"Expected list of texts, got {type(texts)}")
+            
+            # Then validate each text is a string
+            for i, text in enumerate(texts):
+                if not isinstance(text, str):
+                    logger.debug("Invalid text type at position %d: %s", i, type(text))
+                    raise TypeError(f"Expected string at position {i}, got {type(text)}")
+            
+            # Finally validate text content
             self._validate_input(texts)
             
             logger.debug("Processing batch of %d texts for embeddings", len(texts))
@@ -97,8 +117,15 @@ class EmbeddingService(BaseEmbeddingService):
             
         Raises:
             ValueError: If input validation fails
+            TypeError: If input is not a string
         """
         try:
+            # First validate input type
+            if not isinstance(text, str):
+                logger.debug("Invalid input type: %s", type(text))
+                raise TypeError(f"Expected string input, got {type(text)}")
+    
+            # Then validate text content
             self._validate_input([text])
             
             logger.debug("Processing single text for embedding, length: %d", len(text))
