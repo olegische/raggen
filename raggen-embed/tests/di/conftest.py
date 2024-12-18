@@ -17,26 +17,48 @@ from core.vector_store.implementations.faiss import FAISSVectorStore
 from core.vector_store.service import VectorStoreService
 from core.vector_store.factory import VectorStoreFactory
 from core.embeddings import DefaultEmbeddingService
-from core.text_splitting.strategies import SlidingWindowStrategy
 from core.text_splitting.service import TextSplitterService
 from core.text_splitting.factory import TextSplitStrategyFactory
 from core.document_processing.service import DocumentProcessingService
 
 class MockApplicationContainer:
-    """Mock container for testing."""
+    """
+    Mock container for testing application-level dependencies.
+    
+    Contains only singleton services that should be shared across requests:
+    - Settings: Application configuration
+    - EmbeddingService: Heavy model initialization and cache
+    - VectorStore: Shared vector storage
+    - VectorStoreService: Service for vector operations
+    - VectorStoreFactory: Factory for creating stores
+    """
+    
+    # Singleton instances
     _settings = None
     _vector_store_service = None
     _vector_store_factory = None
     _faiss_store = None
     _embedding_service = None
-    _text_splitter_service = None
-    _document_processing_service = None
     
     @classmethod
     def configure(cls, settings):
+        """
+        Configure container with application settings.
+        
+        Initializes only singleton services that are shared across requests:
+        - Settings: Application configuration
+        - VectorStoreFactory: Factory for creating stores
+        - FAISSVectorStore: Base vector store
+        - VectorStoreService: Service for vector operations
+        - EmbeddingService: Heavy model and cache initialization
+        
+        Args:
+            settings: Application settings
+        """
+        # Store settings
         cls._settings = settings
         
-        # Vector store dependencies
+        # Create vector store dependencies
         cls._vector_store_factory = VectorStoreFactory()
         cls._faiss_store = FAISSVectorStore(settings)
         cls._vector_store_service = VectorStoreService(
@@ -45,29 +67,9 @@ class MockApplicationContainer:
             base_store=cls._faiss_store
         )
         
-        # Create embedding service
+        # Create embedding service with heavy model and cache
         cls._embedding_service = DefaultEmbeddingService(
             settings=settings
-        )
-
-        # Create text splitter service with strategy
-        factory = TextSplitStrategyFactory()
-        strategy = factory.create(
-            settings.text_split_strategy,
-            min_length=settings.text_min_length,
-            max_length=settings.text_max_length,
-            overlap=settings.text_overlap
-        )
-        cls._text_splitter_service = TextSplitterService(
-            embedding_service=cls._embedding_service,
-            split_strategy=strategy,
-            settings=settings
-        )
-
-        # Create document processing service
-        cls._document_processing_service = DocumentProcessingService(
-            text_splitter=cls._text_splitter_service,
-            vector_store_service=cls._vector_store_service
         )
     
     @classmethod
@@ -88,24 +90,10 @@ class MockApplicationContainer:
     
     @classmethod
     def get_embedding_service(cls):
-        """Get embedding service."""
+        """Get embedding service singleton."""
         if cls._embedding_service is None:
             raise RuntimeError("Container not configured. Call configure() first.")
         return cls._embedding_service
-
-    @classmethod
-    def get_text_splitter_service(cls):
-        """Get text splitter service."""
-        if cls._text_splitter_service is None:
-            raise RuntimeError("Container not configured. Call configure() first.")
-        return cls._text_splitter_service
-
-    @classmethod
-    def get_document_processing_service(cls):
-        """Get document processing service."""
-        if cls._document_processing_service is None:
-            raise RuntimeError("Container not configured. Call configure() first.")
-        return cls._document_processing_service
     
     @classmethod
     def reset(cls):
@@ -118,22 +106,73 @@ class MockApplicationContainer:
         cls._document_processing_service = None
 
 class MockRequestContainer:
-    """Mock request container for testing."""
+    """
+    Mock request container for testing request-level dependencies.
+    
+    Creates new instances for each request:
+    - TextSplitterService: Independent text processing
+    - DocumentProcessingService: Independent document processing
+    """
     _app_container = None
 
     @classmethod
     def configure(cls, app_container):
+        """Configure container with application container reference."""
         cls._app_container = app_container
 
     @classmethod
     def get_text_splitter_service(cls):
-        """Get text splitter service."""
+        """
+        Create new TextSplitterService for request.
+        
+        Uses:
+        - EmbeddingService singleton from ApplicationContainer
+        - Settings singleton from ApplicationContainer
+        - New strategy instance for text splitting
+        """
         if cls._app_container is None:
             raise RuntimeError("Container not configured. Call configure() first.")
-        return cls._app_container.get_text_splitter_service()
+            
+        settings = cls._app_container.get_settings()
+        embedding_service = cls._app_container.get_embedding_service()
+        
+        factory = TextSplitStrategyFactory()
+        strategy = factory.create(
+            settings.text_split_strategy,
+            min_length=settings.text_min_length,
+            max_length=settings.text_max_length,
+            overlap=settings.text_overlap
+        )
+        
+        return TextSplitterService(
+            embedding_service=embedding_service,
+            split_strategy=strategy,
+            settings=settings
+        )
+
+    @classmethod
+    def get_document_processing_service(cls):
+        """
+        Create new DocumentProcessingService for request.
+        
+        Uses:
+        - New TextSplitterService instance
+        - VectorStoreService singleton from ApplicationContainer
+        """
+        if cls._app_container is None:
+            raise RuntimeError("Container not configured. Call configure() first.")
+            
+        text_splitter = cls.get_text_splitter_service()
+        vector_store_service = cls._app_container.get_vector_store_service()
+        
+        return DocumentProcessingService(
+            text_splitter=text_splitter,
+            vector_store_service=vector_store_service
+        )
 
     @classmethod
     def reset(cls):
+        """Reset container state."""
         cls._app_container = None
 
 @pytest.fixture(scope="function")
