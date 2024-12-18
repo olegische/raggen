@@ -103,6 +103,18 @@ class Settings(BaseSettings):
         default=int(os.getenv("REQUEST_TIMEOUT", "30")),
         description="Request timeout in seconds"
     )
+    tokenizers_parallelism: bool = Field(
+        default=bool(os.getenv("TOKENIZERS_PARALLELISM", "false")),
+        description="Whether to enable parallelism in tokenizers. Set to false to avoid fork-related issues."
+    )
+    omp_num_threads: int = Field(
+        default=int(os.getenv("OMP_NUM_THREADS", "1")),
+        description="Number of OpenMP threads. Set to 1 to avoid parallelism issues."
+    )
+    mkl_num_threads: int = Field(
+        default=int(os.getenv("MKL_NUM_THREADS", "1")),
+        description="Number of MKL threads. Set to 1 to avoid parallelism issues."
+    )
     
     # Logging settings
     log_level: str = Field(

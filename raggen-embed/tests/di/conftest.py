@@ -157,11 +157,19 @@ def di_settings():
     
     # Set environment variables
     os.environ.update({
+        # Vector store settings
         "FAISS_INDEX_PATH": temp_index_path,
         "VECTOR_DIM": "384",
         "VECTOR_STORE_TYPE": "persistent",
         "VECTOR_STORE_IMPL_TYPE": "faiss",
-        "TEXT_SPLIT_STRATEGY": TextSplitStrategy.SLIDING_WINDOW.value
+        
+        # Text splitting settings
+        "TEXT_SPLIT_STRATEGY": TextSplitStrategy.SLIDING_WINDOW.value,
+        
+        # Performance settings
+        "TOKENIZERS_PARALLELISM": "false",  # Disable tokenizers parallelism to avoid fork warnings
+        "OMP_NUM_THREADS": "1",  # Control OpenMP threads
+        "MKL_NUM_THREADS": "1"  # Control MKL threads
     })
     
     # Create settings
@@ -179,7 +187,14 @@ def di_settings():
     
     # Reset settings and environment
     reset_settings()
-    for key in ["FAISS_INDEX_PATH", "VECTOR_DIM", "VECTOR_STORE_TYPE", "VECTOR_STORE_IMPL_TYPE", "TEXT_SPLIT_STRATEGY"]:
+    for key in [
+        # Vector store settings
+        "FAISS_INDEX_PATH", "VECTOR_DIM", "VECTOR_STORE_TYPE", "VECTOR_STORE_IMPL_TYPE",
+        # Text splitting settings
+        "TEXT_SPLIT_STRATEGY",
+        # Performance settings
+        "TOKENIZERS_PARALLELISM", "OMP_NUM_THREADS", "MKL_NUM_THREADS"
+    ]:
         if key in os.environ:
             del os.environ[key]
 
