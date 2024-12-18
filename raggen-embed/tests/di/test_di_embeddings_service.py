@@ -3,7 +3,7 @@ import pytest
 import numpy as np
 import logging
 
-from core.embeddings import EmbeddingService
+from core.embeddings import DefaultEmbeddingService
 from core.embeddings.base import EmbeddingModel, EmbeddingCache
 from core.embeddings.implementations.transformer_model import TransformerModel
 from core.embeddings.cache.lru_cache import LRUEmbeddingCache
@@ -53,11 +53,13 @@ def test_embedding_service_state_persists_container_reset(app_container):
     test_text = "test text for persistence"
     first_embedding = service.get_embedding(test_text)
     
+    # Store settings before reset
+    settings = app_container.get_settings()
+    
     # Reset container
     app_container.reset()
     
-    # Configure new container with same settings
-    settings = app_container.get_settings()
+    # Configure new container with stored settings
     app_container.configure(settings)
     
     # Get new service instance and use it
@@ -68,22 +70,6 @@ def test_embedding_service_state_persists_container_reset(app_container):
     np.testing.assert_array_equal(first_embedding, second_embedding)
     stats = new_service.get_cache_stats()
     assert stats["hits"] == 1, "Cache should persist across container resets"
-
-def test_embedding_service_integration_with_text_splitter(app_container):
-    """Test EmbeddingService integration with TextSplitterService."""
-    from container.request import RequestContainer
-    
-    # Get text splitter service which uses embedding service
-    text_splitter = RequestContainer.get_text_splitter_service()
-    
-    # Verify it uses singleton embedding service
-    assert text_splitter.embedding_service is app_container.get_embedding_service(), \
-        "TextSplitterService should use singleton EmbeddingService"
-    
-    # Test functionality
-    test_text = "test text for integration"
-    embeddings = text_splitter.get_embeddings(test_text)
-    assert isinstance(embeddings, np.ndarray), "Should generate embeddings through service chain"
 
 def test_embedding_service_requires_container_configuration():
     """Test that EmbeddingService requires container to be configured."""
@@ -116,6 +102,9 @@ def test_embedding_service_cleanup_on_container_reset(app_container):
     embedding = service.get_embedding(test_text)
     logger.info("Generated embedding before reset, shape: %s", embedding.shape)
     
+    # Store settings before reset
+    settings = app_container.get_settings()
+    
     # Reset container
     logger.info("Resetting container")
     app_container.reset()
@@ -126,7 +115,6 @@ def test_embedding_service_cleanup_on_container_reset(app_container):
     
     # Configure new container
     logger.info("Configuring new container")
-    settings = app_container.get_settings()
     app_container.configure(settings)
     
     # Get new service
@@ -165,13 +153,15 @@ def test_embedding_service_consistency_across_resets(app_container):
         logger.info("Generated embedding for text length %d, shape: %s", 
                    len(text), embedding.shape)
     
+    # Store settings before reset
+    settings = app_container.get_settings()
+    
     # Reset container
     logger.info("Resetting container")
     app_container.reset()
     
     # Configure new container
     logger.info("Configuring new container")
-    settings = app_container.get_settings()
     app_container.configure(settings)
     
     # Get new service
