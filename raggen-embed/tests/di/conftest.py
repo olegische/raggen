@@ -5,6 +5,26 @@ import tempfile
 import shutil
 import stat
 import numpy as np
+import logging
+
+# Sample data for tests
+SAMPLE_TEXT = """
+First paragraph with some text.
+
+Second paragraph with different content.
+
+Third paragraph for testing.
+"""
+
+SAMPLE_PARAGRAPHS = [
+    "First paragraph with some text.",
+    "Second paragraph with different content.",
+    "Third paragraph for testing."
+]
+
+SAMPLE_EMBEDDINGS = np.random.randn(3, 384).astype(np.float32)
+
+logger = logging.getLogger(__name__)
 
 from config.settings import (
     Settings,
