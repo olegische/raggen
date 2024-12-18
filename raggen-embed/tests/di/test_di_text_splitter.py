@@ -9,25 +9,19 @@ from tests.di.conftest import MockApplicationContainer, MockRequestContainer
 
 logger = logging.getLogger(__name__)
 
-def test_text_splitter_with_injected_embedding_service(app_container):
-    """Test TextSplitterService with injected dependencies."""
-    # Get dependencies from container
-    settings = app_container.get_settings()
-    embedding_service = app_container.get_embedding_service()
-    split_strategy = app_container.get_text_split_strategy()
+def test_text_splitter_service_creation(app_container):
+    """Test TextSplitterService creation through container."""
+    # Get service from container
+    service = app_container.get_text_splitter_service()
     
-    # Create service with injected dependencies
-    service = TextSplitterService(
-        embedding_service=embedding_service,
-        split_strategy=split_strategy,
-        settings=settings
-    )
-    
-    # Verify we got a TextSplitterService with injected dependencies
+    # Verify service was created with correct dependencies
     assert isinstance(service, TextSplitterService), "Should be a TextSplitterService"
-    assert service.embedding_service is embedding_service, "EmbeddingService should be the injected one"
-    assert service.split_strategy is split_strategy, "SplitStrategy should be the injected one"
-    assert service.settings is settings, "Settings should be the injected one"
+    assert service.embedding_service is app_container.get_embedding_service(), \
+        "Should use EmbeddingService from container"
+    assert isinstance(service.split_strategy, SlidingWindowStrategy), \
+        "Should use SlidingWindowStrategy by default"
+    assert service.settings is app_container.get_settings(), \
+        "Should use settings from container"
 
 def test_text_splitter_uses_application_embedding_service(app_container, request_container):
     """Test that TextSplitterService uses singleton EmbeddingService from container."""

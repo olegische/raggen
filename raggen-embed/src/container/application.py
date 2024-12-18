@@ -10,7 +10,7 @@ from core.vector_store.service import VectorStoreService
 from core.vector_store.factory import VectorStoreFactory
 from core.vector_store.implementations import FAISSVectorStore
 from core.text_splitting.factory import TextSplitStrategyFactory
-from core.text_splitting.base import TextSplitStrategy
+from core.text_splitting.service import TextSplitterService
 from core.document_processing import DocumentProcessingService
 
 class ApplicationContainer:
@@ -22,11 +22,8 @@ class ApplicationContainer:
     _vector_store_factory: Optional[VectorStoreFactory] = None
     _faiss_store: Optional[VectorStore] = None
     _embedding_service: Optional[EmbeddingService] = None
-    _text_split_factory: Optional[TextSplitStrategyFactory] = None
+    _text_splitter_service: Optional[TextSplitterService] = None
     _document_processing_service: Optional[DocumentProcessingService] = None
-    
-    # Strategy cache
-    _text_split_strategies: Dict[str, TextSplitStrategy] = {}
     
     @classmethod
     def configure(cls, settings: Settings) -> None:
@@ -49,7 +46,7 @@ class ApplicationContainer:
             base_store=cls._faiss_store
         )
         
-        # Create embedding service dependencies
+        # Create embedding service
         model = TransformerModel(lazy_init=True)
         cache = LRUEmbeddingCache(max_size=settings.batch_size * 10)
         cls._embedding_service = EmbeddingService(
@@ -57,7 +54,20 @@ class ApplicationContainer:
             cache=cache,
             settings=settings
         )
-        cls._text_split_factory = TextSplitStrategyFactory()
+        
+        # Create text splitter service
+        factory = TextSplitStrategyFactory()
+        strategy = factory.create(
+            settings.text_split_strategy,
+            min_length=settings.text_min_length,
+            max_length=settings.text_max_length,
+            overlap=settings.text_overlap
+        )
+        cls._text_splitter_service = TextSplitterService(
+            embedding_service=cls._embedding_service,
+            split_strategy=strategy,
+            settings=settings
+        )
     
     @classmethod
     def get_vector_store_factory(cls) -> VectorStoreFactory:
@@ -110,28 +120,11 @@ class ApplicationContainer:
         return cls._embedding_service
     
     @classmethod
-    def get_text_split_strategy(cls, strategy_type: str) -> TextSplitStrategy:
-        """
-        Get text split strategy (cached).
-        
-        Args:
-            strategy_type: Type of strategy to get
-            
-        Returns:
-            Text split strategy instance
-        """
-        if cls._text_split_factory is None:
+    def get_text_splitter_service(cls) -> TextSplitterService:
+        """Get text splitter service."""
+        if cls._text_splitter_service is None:
             raise RuntimeError("Container not configured. Call configure() first.")
-            
-        if strategy_type not in cls._text_split_strategies:
-            cls._text_split_strategies[strategy_type] = cls._text_split_factory.create(
-                strategy_type,
-                min_length=cls._settings.text_min_length,
-                max_length=cls._settings.text_max_length,
-                overlap=cls._settings.text_overlap
-            )
-        
-        return cls._text_split_strategies[strategy_type]
+        return cls._text_splitter_service
     
     @classmethod
     def get_document_processing_service(cls) -> DocumentProcessingService:
@@ -153,6 +146,5 @@ class ApplicationContainer:
         cls._vector_store_factory = None
         cls._faiss_store = None
         cls._embedding_service = None
-        cls._text_split_factory = None
+        cls._text_splitter_service = None
         cls._document_processing_service = None
-        cls._text_split_strategies.clear()

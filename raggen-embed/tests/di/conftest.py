@@ -19,6 +19,7 @@ from core.vector_store.factory import VectorStoreFactory
 from core.embeddings import DefaultEmbeddingService
 from core.text_splitting.strategies import SlidingWindowStrategy
 from core.text_splitting.service import TextSplitterService
+from core.text_splitting.factory import TextSplitStrategyFactory
 from core.document_processing.service import DocumentProcessingService
 
 class MockApplicationContainer:
@@ -28,7 +29,6 @@ class MockApplicationContainer:
     _vector_store_factory = None
     _faiss_store = None
     _embedding_service = None
-    _text_split_strategy = None
     _text_splitter_service = None
     _document_processing_service = None
     
@@ -50,17 +50,17 @@ class MockApplicationContainer:
             settings=settings
         )
 
-        # Create text split strategy
-        cls._text_split_strategy = SlidingWindowStrategy(
-            max_length=settings.text_max_length,
+        # Create text splitter service with strategy
+        factory = TextSplitStrategyFactory()
+        strategy = factory.create(
+            settings.text_split_strategy,
             min_length=settings.text_min_length,
+            max_length=settings.text_max_length,
             overlap=settings.text_overlap
         )
-
-        # Create text splitter service
         cls._text_splitter_service = TextSplitterService(
             embedding_service=cls._embedding_service,
-            split_strategy=cls._text_split_strategy,
+            split_strategy=strategy,
             settings=settings
         )
 
@@ -94,13 +94,6 @@ class MockApplicationContainer:
         return cls._embedding_service
 
     @classmethod
-    def get_text_split_strategy(cls):
-        """Get text split strategy."""
-        if cls._text_split_strategy is None:
-            raise RuntimeError("Container not configured. Call configure() first.")
-        return cls._text_split_strategy
-
-    @classmethod
     def get_text_splitter_service(cls):
         """Get text splitter service."""
         if cls._text_splitter_service is None:
@@ -121,7 +114,6 @@ class MockApplicationContainer:
         cls._vector_store_factory = None
         cls._faiss_store = None
         cls._embedding_service = None
-        cls._text_split_strategy = None
         cls._text_splitter_service = None
         cls._document_processing_service = None
 
